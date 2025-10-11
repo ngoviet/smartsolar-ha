@@ -9,7 +9,7 @@
 
 Mở Home Assistant của bạn và mở repository trong Home Assistant Community Store.
 
-Tích hợp Home Assistant cho thiết bị SmartSolar MPPT với giám sát thời gian thực qua API và hỗ trợ cả chế độ Device và Project.
+Tích hợp Home Assistant cho thiết bị **Sạc MPPT Mạnh Quân** (40A/45A/60A Wifi) với giám sát thời gian thực qua API và hỗ trợ cả chế độ Device và Project.
 
 ![SmartSolar MPPT Dashboard](https://via.placeholder.com/800x400/2E7D32/FFFFFF?text=SmartSolar+MPPT+Dashboard)
 
@@ -38,8 +38,27 @@ Tích hợp Home Assistant cho thiết bị SmartSolar MPPT với giám sát th�
 
 ## Thiết bị được hỗ trợ
 
-* **Sạc MPPT Mạnh Quân** (Primary support)
-* **Các thiết bị SmartSolar khác** (Tương thích)
+### Sạc MPPT Mạnh Quân (Primary support)
+
+Integration này được thiết kế đặc biệt cho dòng sản phẩm **Sạc MPPT Mạnh Quân** với đầy đủ các phiên bản:
+
+#### 🔋 Các phiên bản được hỗ trợ:
+- **40A Wifi** - Sạc MPPT Mạnh Quân 40A có Wifi
+- **40A Không Wifi** - Sạc MPPT Mạnh Quân 40A không Wifi  
+- **45A Wifi** - Sạc MPPT Mạnh Quân 45A có Wifi
+- **45A Không Wifi** - Sạc MPPT Mạnh Quân 45A không Wifi
+- **60A Wifi** - Sạc MPPT Mạnh Quân 60A có Wifi ⭐ **Khuyến nghị**
+- **60A Không Wifi** - Sạc MPPT Mạnh Quân 60A không Wifi
+
+#### ⚡ Thông số kỹ thuật:
+- **Điện áp PV**: 18-100V
+- **Dòng sạc**: 1-60A (tùy model)
+- **Điện áp sạc**: 6-120V
+- **Kết nối**: Wifi (tùy model) + SmartSolar API
+- **Bảo hành**: 12 tháng
+
+### Các thiết bị SmartSolar khác
+* **Tương thích** với các thiết bị SmartSolar khác sử dụng cùng API
 
 ## Cài đặt
 
