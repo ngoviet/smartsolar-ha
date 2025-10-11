@@ -1,0 +1,89 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "SmartSolar MPPT - Đăng nhập",
+        "description": "Nhập thông tin đăng nhập SmartSolar của bạn\n\nChưa có tài khoản? [Đăng ký ngay](https://smartsolar.io.vn/)",
+        "data": {
+          "username": "Tên đăng nhập",
+          "password": "Mật khẩu"
+        }
+      },
+      "mode": {
+        "title": "Chọn chế độ tích hợp",
+        "description": "Chọn cách bạn muốn tích hợp thiết bị SmartSolar\n\n{{device_info}}",
+        "data": {
+          "mode": "Chế độ"
+        }
+      },
+      "chipset_ids": {
+        "title": "ChipsetId thiết bị",
+        "description": "Nhập ChipsetId của thiết bị SmartSolar",
+        "data": {
+          "chipset_ids": "ChipsetId"
+        }
+      },
+      "project_devices": {
+        "title": "Cấu hình thiết bị dự án",
+        "description": "Nhập số lượng và ID của các thiết bị Sạc MPPT Mạnh Quân",
+        "data": {
+          "manh_quan_count": "Số lượng Sạc MPPT Mạnh Quân",
+          "manh_quan_ids": "ID Sạc MPPT Mạnh Quân (phân cách bằng dấu phẩy)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Không thể kết nối đến SmartSolar API",
+      "invalid_credentials": "Tên đăng nhập hoặc mật khẩu không đúng",
+      "unknown": "Lỗi không xác định",
+      "username_required": "Vui lòng nhập tên đăng nhập",
+      "password_required": "Vui lòng nhập mật khẩu",
+      "chipset_ids_required": "Vui lòng nhập ChipsetId",
+      "chipset_ids_invalid": "ChipsetId không hợp lệ",
+      "device_not_found": "Không tìm thấy thiết bị với ChipsetId này",
+      "manh_quan_ids_required": "Vui lòng nhập ID cho Sạc MPPT Mạnh Quân",
+      "at_least_one_device_required": "Vui lòng chọn ít nhất một loại thiết bị",
+      "manh_quan_count_mismatch": "Số lượng ID Sạc MPPT Mạnh Quân không khớp",
+      "invalid_interval": "Khoảng thời gian phải từ 1-30 giây",
+      "invalid_number": "Vui lòng nhập số hợp lệ"
+    },
+    "abort": {
+      "already_configured": "Tích hợp này đã được cấu hình",
+      "already_in_progress": "Đang cấu hình tích hợp này",
+      "reauth_successful": "Xác thực lại thành công"
+    }
+  },
+  "entity": {
+    "number": {
+      "update_interval": {
+        "name": "Tần suất cập nhật"
+      }
+    },
+    "sensor": {
+      "pv_voltage": {
+        "name": "Điện áp PV"
+      },
+      "pv_current": {
+        "name": "Dòng điện PV"
+      },
+      "bat_voltage": {
+        "name": "Điện áp Pin"
+      },
+      "bat_current": {
+        "name": "Dòng điện Pin"
+      },
+      "charge_power": {
+        "name": "Công suất sạc"
+      },
+      "today_kwh": {
+        "name": "Năng lượng hôm nay"
+      },
+      "total_kwh": {
+        "name": "Tổng năng lượng"
+      },
+      "temperature": {
+        "name": "Nhiệt độ"
+      }
+    }
+  }
+}

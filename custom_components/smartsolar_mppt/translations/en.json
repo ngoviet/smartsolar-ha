@@ -1,0 +1,92 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "SmartSolar MPPT - Login",
+        "description": "Enter your SmartSolar login information\n\nDon't have an account? [Register now](https://smartsolar.io.vn/)",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "mode": {
+        "title": "Select Integration Mode",
+        "description": "Choose how you want to integrate SmartSolar devices\n\n{{device_info}}",
+        "data": {
+          "mode": "Mode"
+        }
+      },
+      "chipset_ids": {
+        "title": "Device Chipset ID",
+        "description": "Enter the Chipset ID of your SmartSolar device",
+        "data": {
+          "chipset_ids": "Chipset ID"
+        }
+      },
+      "project_devices": {
+        "title": "Project Device Configuration",
+        "description": "Enter the quantity and IDs of SmartSolar MPPT Mạnh Quân devices",
+        "data": {
+          "manh_quan_count": "Number of SmartSolar MPPT Mạnh Quân devices",
+          "manh_quan_ids": "SmartSolar MPPT Mạnh Quân IDs (comma-separated)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to SmartSolar API",
+      "invalid_credentials": "Invalid username or password",
+      "unknown": "Unknown error",
+      "username_required": "Please enter a username",
+      "password_required": "Please enter a password",
+      "chipset_ids_required": "Please enter Chipset ID",
+      "chipset_ids_invalid": "Invalid Chipset ID",
+      "device_not_found": "Device not found with this Chipset ID",
+      "manh_quan_ids_required": "Please enter IDs for SmartSolar MPPT Mạnh Quân",
+      "at_least_one_device_required": "Please select at least one device type",
+      "manh_quan_count_mismatch": "Number of SmartSolar MPPT Mạnh Quân IDs does not match",
+      "invalid_interval": "Interval must be between 1-30 seconds",
+      "invalid_number": "Please enter a valid number"
+    },
+    "abort": {
+      "already_configured": "This integration is already configured",
+      "already_in_progress": "Configuration for this integration is already in progress",
+      "reauth_successful": "Reauthentication successful"
+    }
+  },
+  "entity": {
+    "number": {
+      "update_interval": {
+        "name": "Update Interval"
+      }
+    },
+    "sensor": {
+      "pv_voltage": {
+        "name": "PV Voltage"
+      },
+      "pv_current": {
+        "name": "PV Current"
+      },
+      "bat_voltage": {
+        "name": "Battery Voltage"
+      },
+      "bat_current": {
+        "name": "Battery Current"
+      },
+      "charge_power": {
+        "name": "Charge Power"
+      },
+      "today_kwh": {
+        "name": "Energy Today"
+      },
+      "total_kwh": {
+        "name": "Total Energy"
+      },
+      "temperature": {
+        "name": "Temperature"
+      },
+      "status": {
+        "name": "Status"
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+refresh_token:
+  name: Refresh Token
+  description: Manually refresh the SmartSolar API token
+  fields:
+    entry_id:
+      name: Entry ID
+      description: The config entry ID to refresh token for
+      required: true
+      selector:
+        text:
