@@ -1,156 +1,272 @@
-# SmartSolar MPPT Integration for Home Assistant
+# SmartSolar MPPT
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
+[![maintenance](https://img.shields.io/badge/maintained%20by-ngoviet-blue.svg)](https://github.com/ngoviet)
 [![GitHub release](https://img.shields.io/github/release/ngoviet/smartsolar-ha.svg)](https://github.com/ngoviet/smartsolar-ha/releases)
-[![GitHub stars](https://img.shields.io/github/stars/ngoviet/smartsolar-ha.svg?style=social&label=Star)](https://github.com/ngoviet/smartsolar-ha)
+[![GitHub stars](https://img.shields.io/github/stars/ngoviet/smartsolar-ha.svg)](https://github.com/ngoviet/smartsolar-ha/stargazers)
 
-Tích hợp thiết bị SmartSolar MPPT vào Home Assistant với giao diện tiếng Việt hoàn chỉnh.
+Mở Home Assistant của bạn và mở repository trong Home Assistant Community Store.
 
-## ✨ Tính năng
+Tích hợp Home Assistant cho thiết bị SmartSolar MPPT với giám sát thời gian thực qua API và hỗ trợ cả chế độ Device và Project.
 
-- ✅ **Hỗ trợ Sạc MPPT Mạnh Quân** - Tích hợp thiết bị sạc MPPT
-- ✅ **2 chế độ tích hợp** - Device (đơn lẻ) và Project (nhiều thiết bị)
-- ✅ **Giao diện tiếng Việt** - Hoàn toàn localized
-- ✅ **Tự động refresh token** - API key tự động gia hạn
-- ✅ **Cấu hình linh hoạt** - Tần suất cập nhật có thể điều chỉnh
-- ✅ **Sensors đầy đủ** - Điện áp, dòng điện, công suất, nhiệt độ, năng lượng
-- ✅ **Number entity** - Điều chỉnh tần suất cập nhật trực tiếp trong UI
+![SmartSolar MPPT Dashboard](https://via.placeholder.com/800x400/2E7D32/FFFFFF?text=SmartSolar+MPPT+Dashboard)
 
-## 📊 Sensors
+## Tính năng
 
-| Sensor | Đơn vị | Mô tả |
-|--------|--------|-------|
-| `pv_voltage` | V | Điện áp PV |
-| `pv_current` | A | Dòng điện PV |
-| `bat_voltage` | V | Điện áp Pin |
-| `bat_current` | A | Dòng điện Pin |
-| `charge_power` | W | Công suất sạc |
-| `today_kwh` | kWh | Năng lượng hôm nay |
-| `total_kwh` | kWh | Tổng năng lượng |
-| `temperature` | °C | Nhiệt độ |
-| `status` | - | Trạng thái thiết bị |
+* **Giám sát thời gian thực** qua API SmartSolar
+* **Hỗ trợ 2 chế độ tích hợp**:
+  * **Device Mode**: Xem dữ liệu từ một thiết bị đơn lẻ
+  * **Project Mode**: Tổng hợp dữ liệu từ nhiều thiết bị trong một nơi
+* **Hỗ trợ sensor toàn diện** cho:
+  * **Điện áp PV** (PV Voltage)
+  * **Dòng điện PV** (PV Current) 
+  * **Điện áp ắc quy** (Battery Voltage)
+  * **Dòng điện ắc quy** (Battery Current)
+  * **Công suất sạc** (Charge Power)
+  * **Điện năng hôm nay** (Today kWh)
+  * **Tổng điện năng** (Total kWh)
+  * **Nhiệt độ** (Temperature)
+  * **Trạng thái** (Status)
+* **Tự động làm mới token** API (refresh 7 ngày trước khi hết hạn)
+* **Khoảng thời gian cập nhật có thể cấu hình** (1-30 giây)
+* **Giao diện tiếng Việt** và tiếng Anh
+* **Xử lý lỗi mạnh mẽ** và logic kết nối lại
 
-## 🚀 Cài đặt
+![SmartSolar MPPT Sensors](https://via.placeholder.com/800x400/1976D2/FFFFFF?text=SmartSolar+MPPT+Sensors)
+
+## Thiết bị được hỗ trợ
+
+* **Sạc MPPT Mạnh Quân** (Primary support)
+* **Các thiết bị SmartSolar khác** (Tương thích)
+
+## Cài đặt
 
 ### HACS (Khuyến nghị)
 
+Mở Home Assistant của bạn và mở repository trong Home Assistant Community Store.
+
 1. Mở **HACS** trong Home Assistant
 2. Vào **Integrations**
-3. Click **⋮** → **Custom repositories**
-4. Thêm repository: `https://github.com/ngoviet/smartsolar-ha`
-5. Chọn **Integration** làm category
-6. Tìm **SmartSolar MPPT** và cài đặt
-7. Restart Home Assistant
+3. Click **ba chấm** (⋮) ở góc trên bên phải
+4. Chọn **Custom repositories**
+5. Thêm repository này:
+   * **Repository**: `https://github.com/ngoviet/smartsolar-ha`
+   * **Category**: `Integration`
+6. Click **Add**
+7. Tìm kiếm **"SmartSolar MPPT"** và cài đặt
+8. Khởi động lại Home Assistant
+9. Thêm integration qua **Configuration** → **Integrations**
 
-### Thủ công
+### Cài đặt thủ công
 
-1. Download và giải nén [latest release](https://github.com/ngoviet/smartsolar-ha/releases)
-2. Copy thư mục `custom_components/smartsolar_mppt` vào `/config/custom_components/`
-3. Restart Home Assistant
+1. Tải phiên bản mới nhất từ GitHub
+2. Copy thư mục `custom_components/smartsolar_mppt` vào thư mục `custom_components/` của Home Assistant
+3. Khởi động lại Home Assistant
+4. Thêm integration qua **Configuration** → **Integrations**
 
-## ⚙️ Cấu hình
+## Cấu hình
 
-### Bước 1: Thêm Integration
+### Thêm Integration
 
-1. Vào **Settings** → **Devices & Services**
+1. Vào **Configuration** → **Integrations**
 2. Click **Add Integration**
-3. Tìm **SmartSolar MPPT**
-4. Nhập thông tin đăng nhập SmartSolar
+3. Tìm kiếm **"SmartSolar MPPT"**
+4. Nhập thông tin đăng nhập:
+   * **Tên đăng nhập**: Username SmartSolar của bạn
+   * **Mật khẩu**: Password SmartSolar của bạn
+5. Chọn chế độ tích hợp:
+   * **Device**: Xem dữ liệu từ một thiết bị đơn lẻ
+   * **Project**: Tổng hợp dữ liệu từ nhiều thiết bị
+6. Nhập thông tin thiết bị:
+   * **Device Mode**: Nhập ChipsetId của thiết bị
+   * **Project Mode**: Nhập số lượng và ID của các thiết bị
+7. Click **Submit**
 
-### Bước 2: Chọn chế độ tích hợp
+### Cấu hình khoảng thời gian cập nhật
 
-#### **Device Mode** (Thiết bị đơn lẻ)
-- Xem dữ liệu từ một thiết bị đơn lẻ
-- Nhập ChipsetId của thiết bị
+Sau khi cài đặt, bạn có thể điều chỉnh khoảng thời gian cập nhật:
 
-#### **Project Mode** (Dự án)
-- Tổng hợp dữ liệu từ nhiều thiết bị trong một nơi
-- Nhập số lượng và ID của các thiết bị Sạc MPPT Mạnh Quân
+1. Vào **Configuration** → **Devices & Services**
+2. Tìm **SmartSolar MPPT** trong danh sách
+3. Click vào integration
+4. Tìm sensor **"Update Interval"**
+5. Điều chỉnh giá trị từ 1-30 giây
 
-### Bước 3: Cấu hình tần suất cập nhật
+## Yêu cầu
 
-Sau khi cài đặt, bạn sẽ thấy entity **"Tần suất cập nhật"** trong Controls:
-- Click vào entity này để thay đổi tần suất cập nhật
-- Giá trị từ 1-30 giây
-- Thay đổi có hiệu lực ngay lập tức
+* **Home Assistant**: 2022.7.0 trở lên
+* **Python packages**:
+  * `aiohttp>=3.8.0`
 
-## 🔧 Cấu hình nâng cao
+## Sensors
 
-### Environment Variables
+### Sensors thời gian thực
+
+* **PV Voltage**: Điện áp tấm pin mặt trời
+* **PV Current**: Dòng điện tấm pin mặt trời
+* **Battery Voltage**: Điện áp ắc quy
+* **Battery Current**: Dòng điện ắc quy
+* **Charge Power**: Công suất sạc
+* **Today kWh**: Điện năng sản xuất hôm nay
+* **Total kWh**: Tổng điện năng sản xuất
+* **Temperature**: Nhiệt độ thiết bị
+* **Status**: Trạng thái hoạt động
+
+### Number Entity
+
+* **Update Interval**: Khoảng thời gian cập nhật (1-30 giây)
+
+## Xử lý sự cố
+
+### Các vấn đề thường gặp
+
+**"Unknown" values trong sensors:**
+
+* ✅ **Đã sửa trong v1.0**: Parser hiện xử lý đúng cấu trúc dữ liệu API
+* Đảm bảo bạn đang sử dụng phiên bản mới nhất
+
+**Không có dữ liệu từ sensors:**
+
+* Kiểm tra **tên đăng nhập và mật khẩu** có đúng không
+* Xác nhận thiết bị **đang online** trong ứng dụng SmartSolar
+* Xem lại trạng thái kết nối API trong logs
+* Đảm bảo ChipsetId chính xác
+
+**Integration không load được:**
+
+* Xác nhận tất cả **requirements** đã được cài đặt
+* Kiểm tra **logs** của Home Assistant để tìm lỗi
+* Đảm bảo ChipsetId khớp chính xác
+* Thử xóa và thêm lại integration
+
+**Lỗi kết nối API:**
+
+* Kiểm tra kết nối internet
+* Xác nhận API SmartSolar có thể truy cập
+* Xem lại cài đặt firewall
+
+### Debug Logging
+
+Bật logging chi tiết để xử lý sự cố:
 
 ```yaml
-# configuration.yaml
-smartsolar_mppt:
-  username: !secret smartsolar_username
-  password: !secret smartsolar_password
+logger:
+  default: info
+  logs:
+    custom_components.smartsolar_mppt: debug
+    homeassistant.components.http: debug
 ```
 
-### Services
+## Changelog
 
-#### `smartsolar_mppt.refresh_token`
+### 1.0.0 (2025-01-11)
 
-Làm mới API token thủ công.
+* 🎉 **Phát hành đầu tiên**
+* Hỗ trợ Device và Project mode
+* Tích hợp API SmartSolar với auto-refresh token
+* Giao diện tiếng Việt và tiếng Anh
+* 8 loại sensors đầy đủ
+* Khoảng thời gian cập nhật có thể cấu hình
+* Brand icons chính thức
+* Sẵn sàng mở rộng cho các loại thiết bị khác
 
-```yaml
-service: smartsolar_mppt.refresh_token
-data:
-  entry_id: "your_entry_id"
-```
+## Đóng góp
 
-## 📱 Giao diện
+Chúng tôi hoan nghênh sự đóng góp! Đây là cách bạn có thể giúp:
 
-### Device Mode
-```
-SmartSolar MPPT Device
-├── Controls
-│   └── Tần suất cập nhật (5 giây)
-└── Sensors
-    ├── Điện áp PV (59 V)
-    ├── Dòng điện PV (4.96 A)
-    ├── Điện áp Pin (28 V)
-    ├── Dòng điện Pin (9.66 A)
-    ├── Công suất sạc (295 W)
-    ├── Năng lượng hôm nay (2.11 kWh)
-    ├── Tổng năng lượng (345.85 kWh)
-    ├── Nhiệt độ (31.0 °C)
-    └── Trạng thái (0.0)
-```
+1. **Fork** repository
+2. **Tạo** feature branch (`git checkout -b feature/tinh-nang-tuyet-voi`)
+3. **Commit** thay đổi (`git commit -m 'Thêm tinh năng tuyệt vời'`)
+4. **Push** lên branch (`git push origin feature/tinh-nang-tuyet-voi`)
+5. **Mở** Pull Request
 
-### Project Mode
-```
-SmartSolar MPPT Project (3 devices)
-├── Controls
-│   └── Tần suất cập nhật (30 giây)
-└── Sensors
-    └── [Tương tự Device Mode cho mỗi thiết bị]
-```
+### Thiết lập phát triển
 
-## 🌐 Hỗ trợ đa ngôn ngữ
+1. Clone repository
+2. Cài đặt dependencies phát triển
+3. Thực hiện thay đổi
+4. Test với thiết bị SmartSolar của bạn
+5. Submit pull request
 
-- ✅ **Tiếng Việt** - Hoàn chỉnh
-- ✅ **English** - Cơ bản
+## Hỗ trợ
 
-## 🔗 Liên kết
+* 📧 **GitHub Issues**: Báo cáo lỗi hoặc yêu cầu tính năng
+* 💬 **Home Assistant Community**: Tham gia thảo luận
+* 📖 **Tài liệu**: Xem README này và comments trong code
 
-- **SmartSolar Website**: [https://smartsolar.io.vn/](https://smartsolar.io.vn/)
-- **Đăng ký tài khoản**: [https://smartsolar.io.vn/](https://smartsolar.io.vn/)
-- **GitHub Issues**: [https://github.com/ngoviet/smartsolar-ha/issues](https://github.com/ngoviet/smartsolar-ha/issues)
-- **GitHub Discussions**: [https://github.com/ngoviet/smartsolar-ha/discussions](https://github.com/ngoviet/smartsolar-ha/discussions)
+## Giấy phép
 
-## 📄 License
+Dự án này được cấp phép theo **MIT License** - xem file LICENSE để biết thêm chi tiết.
 
-MIT License - Xem [LICENSE](LICENSE) để biết thêm chi tiết.
+## Lời cảm ơn
 
-## 👨‍💻 Tác giả
+* **SmartSolar** vì đã cung cấp API
+* **Home Assistant Community** vì sự hỗ trợ và phản hồi
+* **HACS** vì giúp việc cài đặt trở nên dễ dàng
+* **Các contributors** giúp cải thiện integration này
 
-**@ngoviet** - [GitHub](https://github.com/ngoviet)
+## Ủng hộ
 
-## 🙏 Cảm ơn
+Nếu bạn thấy integration này hữu ích, hãy cân nhắc hỗ trợ phát triển:
 
-- SmartSolar team cho API tuyệt vời
-- Home Assistant community cho sự hỗ trợ
-- HACS team cho platform tuyệt vời
+[Buy me a coffee](https://www.buymeacoffee.com/ngoviet)
 
 ---
 
-**⭐ Nếu bạn thích integration này, hãy cho một star trên GitHub!**
+**Được tạo với ❤️ cho cộng đồng Home Assistant**
+
+## Về
+
+Tích hợp Home Assistant cho thiết bị SmartSolar MPPT
+
+### Tài nguyên
+
+[Readme](README.md)
+
+### Giấy phép
+
+[MIT license](LICENSE)
+
+### Hoạt động
+
+### Stars
+
+**0** stars
+
+### Watchers
+
+**0** watching
+
+### Forks
+
+**0** forks
+
+[Report repository](https://github.com/ngoviet/smartsolar-ha/issues)
+
+## Releases
+
+[SmartSolar MPPT v1.0.0 - Initial Release](https://github.com/ngoviet/smartsolar-ha/releases/tag/v1.0.0) - Latest Jan 11, 2025
+
+## Packages
+
+No packages published
+
+## Ngôn ngữ
+
+* Python 100.0%
+
+## Footer
+
+© 2025 GitHub, Inc.
+
+### Footer navigation
+
+* Terms
+* Privacy
+* Security
+* Status
+* Community
+* Docs
+* Contact
+* Manage cookies
+* Do not share my personal information
