@@ -215,7 +215,7 @@ Dự án này được cấp phép theo **MIT License** - xem file LICENSE để
 
 Nếu bạn thấy integration này hữu ích, hãy cân nhắc hỗ trợ phát triển:
 
-[Buy me a coffee](https://www.buymeacoffee.com/ngoviet)
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-☕-yellow.svg)](https://www.buymeacoffee.com/ngoviet)
 
 ---
 
