@@ -5,6 +5,8 @@
 [![GitHub release](https://img.shields.io/github/release/ngoviet/smartsolar-ha.svg)](https://github.com/ngoviet/smartsolar-ha/releases)
 [![GitHub stars](https://img.shields.io/github/stars/ngoviet/smartsolar-ha.svg)](https://github.com/ngoviet/smartsolar-ha/stargazers)
 
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ngoviet&repository=smartsolar-ha&category=integration)
+
 Mở Home Assistant của bạn và mở repository trong Home Assistant Community Store.
 
 Tích hợp Home Assistant cho thiết bị SmartSolar MPPT với giám sát thời gian thực qua API và hỗ trợ cả chế độ Device và Project.
