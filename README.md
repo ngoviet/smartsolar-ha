@@ -1,4 +1,6 @@
-# SmartSolar MPPT
+# SmartSolar MPPT - Sạc MPPT Mạnh Quân Home Assistant Integration
+
+> **Keywords**: MPPT Mạnh Quân, Manh Quan, SmartSolar, Home Assistant, HACS, Sạc năng lượng mặt trời, Solar charger, 40A 45A 60A Wifi
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 [![maintenance](https://img.shields.io/badge/maintained%20by-ngoviet-blue.svg)](https://github.com/ngoviet)
