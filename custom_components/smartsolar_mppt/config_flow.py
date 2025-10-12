@@ -137,9 +137,6 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="mode",
             data_schema=STEP_MODE_DATA_SCHEMA,
-            description_placeholders={
-                "device_info": "• device: Xem dữ liệu từ một thiết bị đơn lẻ\n• project: Tổng hợp dữ liệu từ nhiều thiết bị trong một nơi"
-            }
         )
 
 

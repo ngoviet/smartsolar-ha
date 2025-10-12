@@ -11,7 +11,7 @@
       },
       "mode": {
         "title": "Chọn chế độ tích hợp",
-        "description": "Chọn cách bạn muốn tích hợp thiết bị SmartSolar\n\n{{device_info}}",
+        "description": "Chọn cách bạn muốn tích hợp thiết bị SmartSolar\n\n• device: Xem dữ liệu từ một thiết bị đơn lẻ\n• project: Tổng hợp dữ liệu từ nhiều thiết bị trong một nơi",
         "data": {
           "mode": "Chế độ"
         }

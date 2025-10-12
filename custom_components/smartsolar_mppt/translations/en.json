@@ -11,7 +11,7 @@
       },
       "mode": {
         "title": "Select Integration Mode",
-        "description": "Choose how you want to integrate SmartSolar devices\n\n{{device_info}}",
+        "description": "Choose how you want to integrate SmartSolar devices\n\n• device: View data from a single device\n• project: Aggregate data from multiple devices in one place",
         "data": {
           "mode": "Mode"
         }
