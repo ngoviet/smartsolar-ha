@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from functools import cached_property
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
@@ -132,7 +133,7 @@ class SmartSolarSensor(CoordinatorEntity[SmartSolarDataUpdateCoordinator], Senso
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self.coordinator.last_update_success
+        return super().available and self.coordinator.last_update_success
 
     def _get_value_from_data_streams(self, data_streams: list[dict[str, Any]]) -> float | str | None:
         """Get value from data streams based on sensor type."""
@@ -161,7 +162,7 @@ class SmartSolarSensor(CoordinatorEntity[SmartSolarDataUpdateCoordinator], Senso
 class SmartSolarDeviceSensor(SmartSolarSensor):
     """SmartSolar sensor for device mode."""
 
-    @property
+    @cached_property
     def native_value(self) -> float | str | None:
         """Return the state of the sensor."""
         if not self.coordinator.data:
@@ -181,7 +182,7 @@ class SmartSolarDeviceSensor(SmartSolarSensor):
 class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
     """SmartSolar sensor for project synthesis mode."""
 
-    @property
+    @cached_property
     def native_value(self) -> float | str | None:
         """Return the state of the sensor."""
         if not self.coordinator.data:
@@ -260,7 +261,7 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
 class SmartSolarProjectDeviceSensor(SmartSolarSensor):
     """SmartSolar sensor for individual device in project mode."""
 
-    @property
+    @cached_property
     def native_value(self) -> float | str | None:
         """Return the state of the sensor."""
         if not self.coordinator.data:
@@ -284,7 +285,7 @@ class SmartSolarProjectDeviceSensor(SmartSolarSensor):
         _LOGGER.warning("Project device sensor %s - No matching device found for GUID: %s", self._sensor_type, self._device_guid)
         return None
 
-    @property
+    @cached_property
     def name(self) -> str:
         """Return the name of the sensor."""
         if self._sensor_info and self._device_guid:

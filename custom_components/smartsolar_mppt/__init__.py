@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 
+import aiohttp
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -22,7 +23,7 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.NUMBER]
 
 
-async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
+async def async_setup(hass: HomeAssistant, _: dict[str, Any]) -> bool:
     """Set up the SmartSolar MPPT component."""
     hass.data.setdefault(DOMAIN, {})
     return True
@@ -102,7 +103,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if coordinator:
             try:
                 await coordinator.api.close()
-            except Exception as e:
+            except (aiohttp.ClientError, RuntimeError) as e:
                 _LOGGER.warning("Error closing API session: %s", e)
             finally:
                 hass.data[DOMAIN].pop(entry.entry_id, None)

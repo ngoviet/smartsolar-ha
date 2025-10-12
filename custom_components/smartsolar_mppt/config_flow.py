@@ -5,9 +5,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import aiohttp
+
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigFlow
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
@@ -96,6 +98,11 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._chipset_ids: list[str] | None = None
         self._project_method: str | None = None
         self._project_id: str | None = None
+        self._device_types: list[int] | None = None
+
+    def is_matching(self, other_flow: "ConfigFlow") -> bool:
+        """Check if this config entry matches the current flow."""
+        return hasattr(other_flow, 'domain') and other_flow.domain == DOMAIN
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -131,7 +138,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     else:
                         errors["base"] = ERROR_CANNOT_CONNECT
                     _LOGGER.error("API error during login: %s", err)
-                except Exception as err:
+                except (aiohttp.ClientError, ValueError, KeyError) as err:
                     _LOGGER.error("Unexpected error during login: %s", err)
                     errors["base"] = ERROR_UNKNOWN
 
@@ -293,7 +300,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     else:
                         errors["base"] = ERROR_CANNOT_CONNECT
                     _LOGGER.error("API error during test: %s", err)
-                except Exception as err:
+                except (aiohttp.ClientError, ValueError, KeyError) as err:
                     _LOGGER.error("Unexpected error during test: %s", err)
                     errors["base"] = ERROR_UNKNOWN
 
@@ -365,7 +372,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         else:
                             errors["base"] = ERROR_CANNOT_CONNECT
                         _LOGGER.error("API error during test: %s", err)
-                    except Exception as err:
+                    except (aiohttp.ClientError, ValueError, KeyError) as err:
                         _LOGGER.error("Unexpected error during test: %s", err)
                         errors["base"] = ERROR_UNKNOWN
 
