@@ -65,18 +65,29 @@ async def async_setup_entry(
             )
 
         # Individual device sensors
-        if chipset_ids:
-            for device_guid in chipset_ids:
-                for sensor_type, sensor_info in SENSOR_TYPES.items():
-                    entities.append(
-                        SmartSolarProjectDeviceSensor(
-                            coordinator=coordinator,
-                            config_entry=config_entry,
-                            sensor_type=sensor_type,
-                            sensor_info=sensor_info,
-                            device_guid=device_guid,
-                        )
+        # Get device GUIDs from coordinator data (works for both Project ID and Device IDs mode)
+        device_guids = []
+        
+        # Try to get device GUIDs from coordinator data first
+        if coordinator.data and "deviceLogs" in coordinator.data:
+            device_guids = [str(log.get("deviceGuid")) for log in coordinator.data.get("deviceLogs", []) if log.get("deviceGuid")]
+        
+        # Fallback to chipset_ids from config if no data available yet
+        if not device_guids and chipset_ids:
+            device_guids = chipset_ids
+        
+        # Create individual device sensors for each discovered device
+        for device_guid in device_guids:
+            for sensor_type, sensor_info in SENSOR_TYPES.items():
+                entities.append(
+                    SmartSolarProjectDeviceSensor(
+                        coordinator=coordinator,
+                        config_entry=config_entry,
+                        sensor_type=sensor_type,
+                        sensor_info=sensor_info,
+                        device_guid=device_guid,
                     )
+                )
 
     async_add_entities(entities)
 
@@ -295,3 +306,4 @@ class SmartSolarProjectDeviceSensor(SmartSolarSensor):
             return f"Unknown ({self._device_guid[:8]}...)"
         else:
             return "Unknown Device"
+
