@@ -13,7 +13,7 @@ Mở Home Assistant của bạn và mở repository trong Home Assistant Communi
 
 ## Tại sao mình tạo integration này? 🌞
 
-Mình đã sử dụng sạc MPPT Mạnh Quân được vài năm rồi, và mỗi lần muốn xem pin sạc được bao nhiêu điện, mình phải mở app SmartSolar trên điện thoại. Thật sự bất tiện! 
+Mình đã sử dụng sạc MPPT Mạnh Quân được 1 năm rồi, và mỗi lần muốn xem pin sạc được bao nhiêu điện, mình phải mở app SmartSolar trên điện thoại. Thật sự bất tiện! 
 
 Mình nghĩ: "Sao không tích hợp vào Home Assistant để xem ngay trên dashboard, cùng với các thiết bị khác trong nhà?" Và thế là integration này ra đời! 
 
@@ -37,7 +37,6 @@ Khi cài đặt integration này, bạn sẽ có thể:
 * **Điều chỉnh tốc độ cập nhật** - từ 1 giây đến 30 giây, tùy ý bạn
 * **Giao diện tiếng Việt** - dễ hiểu, gần gũi
 
-![SmartSolar MPPT Dashboard](https://via.placeholder.com/800x400/2E7D32/FFFFFF?text=SmartSolar+MPPT+Dashboard)
 
 ## Thiết bị được hỗ trợ 🔋
 
@@ -59,7 +58,6 @@ Integration này được thiết kế đặc biệt cho dòng sạc **Mạnh Qu
 ### Các thiết bị SmartSolar khác
 * Tương thích với các thiết bị SmartSolar khác sử dụng cùng API
 
-![SmartSolar MPPT Sensors](https://via.placeholder.com/800x400/1976D2/FFFFFF?text=SmartSolar+MPPT+Sensors)
 
 ## Làm sao để bắt đầu? 🚀
 
@@ -135,9 +133,9 @@ Sau khi cài đặt, bạn có thể điều chỉnh tốc độ cập nhật:
 
 Mình rất vui nếu bạn muốn cùng phát triển integration này!
 
-- **Báo lỗi**: Tạo Issue trên GitHub
-- **Góp ý tính năng**: Cũng tạo Issue
-- **Sửa code**: Tạo Pull Request
+- **Báo lỗi**: [Tạo Issue trên GitHub](https://github.com/ngoviet/smartsolar-ha/issues/new)
+- **Góp ý tính năng**: [Cũng tạo Issue](https://github.com/ngoviet/smartsolar-ha/issues/new)
+- **Sửa code**: [Tạo Pull Request](https://github.com/ngoviet/smartsolar-ha/compare)
 
 Mọi đóng góp, dù nhỏ hay lớn, đều được trân trọng! 💚
 
