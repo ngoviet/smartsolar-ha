@@ -101,5 +101,13 @@
         "name": "Nhiệt độ"
       }
     }
+  },
+  "entity": {
+    "number": {
+      "update_frequency": {
+        "name": "Tần suất cập nhật",
+        "unit": "giây"
+      }
+    }
   }
 }

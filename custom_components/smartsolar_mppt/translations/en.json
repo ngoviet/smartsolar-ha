@@ -104,5 +104,13 @@
         "name": "Status"
       }
     }
+  },
+  "entity": {
+    "number": {
+      "update_frequency": {
+        "name": "Update Frequency",
+        "unit": "seconds"
+      }
+    }
   }
 }

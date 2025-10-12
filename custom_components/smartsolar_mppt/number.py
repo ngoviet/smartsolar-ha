@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers import translation
 
 from .const import (
     DOMAIN,
@@ -42,7 +43,6 @@ class UpdateIntervalNumber(CoordinatorEntity, NumberEntity):
     _attr_native_min_value = MIN_UPDATE_INTERVAL
     _attr_native_max_value = MAX_UPDATE_INTERVAL
     _attr_native_step = 1
-    _attr_native_unit_of_measurement = "giây"
 
     def __init__(
         self,
@@ -53,7 +53,38 @@ class UpdateIntervalNumber(CoordinatorEntity, NumberEntity):
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_update_interval"
-        self._attr_name = "Tần suất cập nhật"
+        self._attr_name = "Update Frequency"  # Will be translated
+        self._attr_native_unit_of_measurement = "seconds"  # Will be translated
+        self._hass = None
+
+    async def async_added_to_hass(self) -> None:
+        """Called when entity is added to hass."""
+        await super().async_added_to_hass()
+        self._hass = self.hass
+        await self._update_translations()
+
+    async def _update_translations(self) -> None:
+        """Update entity name and unit from translations."""
+        if not self._hass:
+            return
+            
+        try:
+            translations = await self._hass.helpers.translation.async_get_translations(
+                self._hass.config.language, "config", {"smartsolar_mppt"}
+            )
+            
+            # Update name
+            name_key = "entity.number.update_frequency.name"
+            if name_key in translations:
+                self._attr_name = translations[name_key]
+            
+            # Update unit
+            unit_key = "entity.number.update_frequency.unit"
+            if unit_key in translations:
+                self._attr_native_unit_of_measurement = translations[unit_key]
+                
+        except Exception as e:
+            _LOGGER.warning("Could not load translations: %s", e)
 
     @property
     def device_info(self):
@@ -78,16 +109,12 @@ class UpdateIntervalNumber(CoordinatorEntity, NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         """Set new update interval."""
         from datetime import timedelta
-        from homeassistant.helpers import config_validation as cv
 
         new_interval = timedelta(seconds=int(value))
         _LOGGER.info("Changing update interval from %s to %s seconds", 
                      self.coordinator.update_interval, value)
         
-        # Update coordinator's update interval
-        self.coordinator.update_interval = new_interval
-        
-        # Save to config entry
+        # Save to config entry first
         new_data = self._entry.data.copy()
         new_data["update_interval"] = int(value)
         
@@ -96,9 +123,14 @@ class UpdateIntervalNumber(CoordinatorEntity, NumberEntity):
             self._entry, data=new_data
         )
         
-        # Trigger immediate refresh with new interval
-        await self.coordinator.async_request_refresh()
+        # Update coordinator's update interval
+        self.coordinator.update_interval = new_interval
+        
+        # Restart the coordinator with new interval
+        await self.coordinator.async_refresh()
         
         # Update the UI
         self.async_write_ha_state()
+        
+        _LOGGER.info("Update interval changed to %s seconds successfully", value)
 
