@@ -15,7 +15,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 
 from .api import SmartSolarAPI
-from .const import CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL, DOMAIN
+from .const import DEFAULT_UPDATE_INTERVAL, DOMAIN
 from .coordinator import SmartSolarDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,7 +41,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
 
     # Get update interval from data (default to 5 seconds)
-    update_interval = entry.data.get(CONF_UPDATE_INTERVAL, 5)
+    # Note: update_interval is now controlled via Number entity
+    update_interval = entry.data.get("update_interval", 5)  # Default 5 seconds
 
     # Initialize coordinator
     coordinator = SmartSolarDataUpdateCoordinator(

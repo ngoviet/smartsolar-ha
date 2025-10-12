@@ -78,6 +78,7 @@ class UpdateIntervalNumber(CoordinatorEntity, NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         """Set new update interval."""
         from datetime import timedelta
+        from homeassistant.helpers import config_validation as cv
 
         new_interval = timedelta(seconds=int(value))
         _LOGGER.info("Changing update interval from %s to %s seconds", 
@@ -85,6 +86,15 @@ class UpdateIntervalNumber(CoordinatorEntity, NumberEntity):
         
         # Update coordinator's update interval
         self.coordinator.update_interval = new_interval
+        
+        # Save to config entry
+        new_data = self._entry.data.copy()
+        new_data["update_interval"] = int(value)
+        
+        # Update the config entry
+        self.hass.config_entries.async_update_entry(
+            self._entry, data=new_data
+        )
         
         # Trigger immediate refresh with new interval
         await self.coordinator.async_request_refresh()
