@@ -186,6 +186,13 @@ class SmartSolarAPI:
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
+                        
+                        # Normalize deviceGuid to string for consistent matching
+                        if "deviceLogs" in data:
+                            for device_log in data["deviceLogs"]:
+                                if "deviceGuid" in device_log:
+                                    device_log["deviceGuid"] = str(device_log["deviceGuid"])
+                        
                         _LOGGER.debug("Successfully fetched metrics from SmartSolar API")
                         return data
                     elif response.status == 404:

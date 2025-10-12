@@ -172,7 +172,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     all_devices = []
                     device_types = []
                     
-                    manh_ids = [id.strip() for id in manh_quan_ids.split(",") if id.strip()]
+                    manh_ids = [str(id.strip()) for id in manh_quan_ids.split(",") if id.strip()]
                     if len(manh_ids) != manh_quan_count:
                         errors["base"] = "manh_quan_count_mismatch"
                     else:

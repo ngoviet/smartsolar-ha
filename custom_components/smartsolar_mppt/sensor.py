@@ -205,7 +205,7 @@ class SmartSolarProjectDeviceSensor(SmartSolarSensor):
             device_guid = device_log.get("deviceGuid")
             _LOGGER.debug("Project device sensor %s - Checking deviceGuid: %s (type: %s)", self._sensor_type, device_guid, type(device_guid))
             
-            if device_guid == self._device_guid:
+            if str(device_guid) == str(self._device_guid):
                 data_streams = device_log.get("dataStreams", [])
                 _LOGGER.debug("Project device sensor %s - Found matching device, dataStreams: %s", self._sensor_type, data_streams)
                 return self._get_value_from_data_streams(data_streams)
