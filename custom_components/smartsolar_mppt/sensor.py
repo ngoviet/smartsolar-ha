@@ -207,6 +207,31 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
                 except (ValueError, TypeError):
                     return None
         
+        # For status, calculate average from deviceLogs since it's not in synthesisStreams
+        if self._sensor_type == "status":
+            device_logs = self.coordinator.data.get("deviceLogs", [])
+            if not device_logs:
+                _LOGGER.debug("Project synthesis sensor %s - No deviceLogs available for status calculation", self._sensor_type)
+                return None
+            
+            total_status = 0.0
+            count = 0
+            
+            for device_log in device_logs:
+                data_streams = device_log.get("dataStreams", [])
+                device_status = self._get_value_from_data_streams(data_streams)
+                
+                if device_status is not None:
+                    total_status += device_status
+                    count += 1
+            
+            if count == 0:
+                _LOGGER.debug("Project synthesis sensor %s - No valid status data from any device", self._sensor_type)
+                return None
+            
+            # Return average status
+            return total_status / count
+        
         _LOGGER.debug("Project synthesis sensor %s - Field '%s' not found in synthesisStreams", self._sensor_type, field_name)
         return None
 
