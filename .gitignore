@@ -41,3 +41,10 @@ Thumbs.db
 # Temporary directories
 temp_brands/
 brands_prep/
+
+# Exclude unnecessary files from repository
+Generated Image*.png
+KEYWORDS.md
+logo.png
+logo2.png
+custom_components/smartsolar_mppt/ICON_README.md
