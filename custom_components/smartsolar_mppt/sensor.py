@@ -112,7 +112,13 @@ class SmartSolarSensor(CoordinatorEntity[SmartSolarDataUpdateCoordinator], Senso
         self._attr_native_unit_of_measurement = sensor_info["unit"]
         self._attr_icon = sensor_info["icon"]
         self._attr_device_class = sensor_info.get("device_class")
-        self._attr_state_class = SensorStateClass(sensor_info.get("state_class", "measurement"))
+        
+        # Set state_class only if it's not None
+        state_class = sensor_info.get("state_class")
+        if state_class is not None:
+            self._attr_state_class = SensorStateClass(state_class)
+        else:
+            self._attr_state_class = None
 
         # Set device info
         device_type_name = "Sạc MPPT Mạnh Quân"  # Only support Mạnh Quân now
