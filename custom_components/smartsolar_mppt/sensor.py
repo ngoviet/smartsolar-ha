@@ -196,11 +196,11 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
             device_value = self._get_value_from_data_streams(data_streams)
             
             if device_value is not None:
-                if self._sensor_type in ["today_kwh", "total_kwh", "charge_power", "bat_current", "pv_current"]:
-                    # Sum for energy, power, and current values
+                if self._sensor_type in ["today_kwh", "total_kwh", "charge_power", "bat_current"]:
+                    # Sum for energy, power, and battery current
                     total_value += device_value
                 else:
-                    # Average for voltage and temperature
+                    # Average for voltage, PV current, and temperature
                     total_value += device_value
                 count += 1
         
@@ -208,11 +208,11 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
             _LOGGER.debug("Project synthesis sensor %s - No valid data from any device", self._sensor_type)
             return None
         
-        if self._sensor_type in ["today_kwh", "total_kwh", "charge_power", "bat_current", "pv_current"]:
-            # Return sum for energy, power, and current
+        if self._sensor_type in ["today_kwh", "total_kwh", "charge_power", "bat_current"]:
+            # Return sum for energy, power, and battery current
             return total_value
         else:
-            # Return average for voltage and temperature
+            # Return average for voltage, PV current, and temperature
             return total_value / count
 
 
