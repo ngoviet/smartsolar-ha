@@ -43,7 +43,7 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             # Get configuration from entry
             device_type = self.entry.data["device_type"]
-            chipset_ids = self.entry.data["chipset_ids"]
+            chipset_ids = self.entry.data.get("chipset_ids")
             mode = self.entry.data["mode"]
             project_id = self.entry.data.get("project_id")
 
@@ -56,6 +56,9 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 data = await self.api.get_project_metrics(project_id)
             else:
                 # Use existing logic for device mode or device IDs project mode
+                if not chipset_ids:
+                    raise UpdateFailed("No chipset_ids or project_id found in configuration")
+                
                 data = await self.api.get_metrics(
                     device_type=device_type,
                     chipset_ids=chipset_ids,
