@@ -69,5 +69,5 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.error("SmartSolar API error: %s", err)
             raise UpdateFailed(f"SmartSolar API error: {err}") from err
         except Exception as err:
-            _LOGGER.error("Unexpected error: %s", err)
+            _LOGGER.error("Unexpected error: %s", err, exc_info=True)
             raise UpdateFailed(f"Unexpected error: {err}") from err

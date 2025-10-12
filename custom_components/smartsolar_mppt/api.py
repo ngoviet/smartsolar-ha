@@ -68,7 +68,7 @@ class SmartSolarAPI:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     loop.create_task(self._session.close())
-            except Exception:
+            except (RuntimeError, asyncio.CancelledError):
                 pass
 
     async def login(self) -> dict[str, Any]:
@@ -89,9 +89,22 @@ class SmartSolarAPI:
                 if response.status == 200:
                     data = await response.json()
                     self._token = data.get("token")
-                    self._token_expiry = datetime.fromisoformat(
-                        data.get("expiration", "").replace("Z", "+00:00")
-                    )
+                    
+                    # Parse token expiry safely
+                    expiration_str = data.get("expiration", "")
+                    if expiration_str:
+                        try:
+                            # Handle different datetime formats
+                            if expiration_str.endswith("Z"):
+                                expiration_str = expiration_str.replace("Z", "+00:00")
+                            self._token_expiry = datetime.fromisoformat(expiration_str)
+                        except (ValueError, TypeError) as e:
+                            _LOGGER.warning("Could not parse token expiry: %s, using default 30 days", e)
+                            self._token_expiry = dt_util.utcnow() + timedelta(days=30)
+                    else:
+                        # Default to 30 days if no expiry provided
+                        self._token_expiry = dt_util.utcnow() + timedelta(days=30)
+                    
                     _LOGGER.debug("Successfully logged in to SmartSolar API")
                     return data
                 else:
@@ -164,7 +177,7 @@ class SmartSolarAPI:
                 # For project mode, use Metric/SynthesisMetrics endpoint
                 params = {"deviceType": device_type}
                 for chipset_id in chipset_ids:
-                    params[f"deviceGuids"] = chipset_id
+                    params["deviceGuids"] = chipset_id
 
                 async with session.get(
                     API_METRICS_ENDPOINT,
