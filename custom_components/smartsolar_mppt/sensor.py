@@ -180,10 +180,40 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
         if not self.coordinator.data:
             return None
 
-        # For project mode synthesis, data is in synthesisStreams
-        synthesis_streams = self.coordinator.data.get("synthesisStreams", [])
+        # For project mode synthesis, calculate total from all deviceLogs
+        device_logs = self.coordinator.data.get("deviceLogs", [])
         
-        return self._get_value_from_data_streams(synthesis_streams)
+        if not device_logs:
+            _LOGGER.debug("Project synthesis sensor %s - No deviceLogs available", self._sensor_type)
+            return None
+        
+        # Calculate total for numeric values, average for others
+        total_value = 0.0
+        count = 0
+        
+        for device_log in device_logs:
+            data_streams = device_log.get("dataStreams", [])
+            device_value = self._get_value_from_data_streams(data_streams)
+            
+            if device_value is not None:
+                if self._sensor_type in ["today_kwh", "total_kwh", "charge_power"]:
+                    # Sum for energy and power values
+                    total_value += device_value
+                else:
+                    # Average for voltage, current, temperature
+                    total_value += device_value
+                count += 1
+        
+        if count == 0:
+            _LOGGER.debug("Project synthesis sensor %s - No valid data from any device", self._sensor_type)
+            return None
+        
+        if self._sensor_type in ["today_kwh", "total_kwh", "charge_power"]:
+            # Return sum for energy and power
+            return total_value
+        else:
+            # Return average for other values
+            return total_value / count
 
 
 class SmartSolarProjectDeviceSensor(SmartSolarSensor):
