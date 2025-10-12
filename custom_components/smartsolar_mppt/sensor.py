@@ -228,8 +228,20 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
                 device_status = self._get_value_from_data_streams(data_streams)
                 
                 if device_status is not None:
-                    total_status += device_status
-                    count += 1
+                    # For status calculation, we need the raw numeric value, not the mapped string
+                    # Find the raw status value from data streams
+                    raw_status = None
+                    for stream in data_streams:
+                        if stream.get("name") == "status":
+                            try:
+                                raw_status = float(stream.get("value", 0))
+                                break
+                            except (ValueError, TypeError):
+                                raw_status = 0
+                    
+                    if raw_status is not None:
+                        total_status += raw_status
+                        count += 1
             
             if count == 0:
                 _LOGGER.debug("Project synthesis sensor %s - No valid status data from any device", self._sensor_type)
