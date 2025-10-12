@@ -1,7 +1,7 @@
 {
   "domain": "smartsolar_mppt",
   "name": "SmartSolar MPPT - Sạc MPPT Mạnh Quân",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "documentation": "https://github.com/ngoviet/smartsolar-ha",
   "codeowners": ["@ngoviet"],
   "requirements": ["aiohttp>=3.8.0"],

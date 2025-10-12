@@ -26,7 +26,20 @@ class SmartSolarAPIError(Exception):
     def __init__(self, message: str, status_code: int | None = None) -> None:
         """Initialize SmartSolar API error."""
         super().__init__(message)
+        self.message = message
         self.status_code = status_code
+
+
+class SmartSolarAuthenticationError(SmartSolarAPIError):
+    """Authentication failed."""
+
+
+class SmartSolarConnectionError(SmartSolarAPIError):
+    """Connection error."""
+
+
+class SmartSolarNotFoundError(SmartSolarAPIError):
+    """Resource not found."""
 
 
 class SmartSolarAPI:
@@ -114,13 +127,19 @@ class SmartSolarAPI:
                         response.status, 
                         error_text
                     )
-                    raise SmartSolarAPIError(
-                        f"Login failed: {error_text}", 
-                        response.status
-                    )
+                    if response.status == 401:
+                        raise SmartSolarAuthenticationError(
+                            f"Invalid credentials: {error_text}", 
+                            response.status
+                        )
+                    else:
+                        raise SmartSolarAPIError(
+                            f"Login failed: {error_text}", 
+                            response.status
+                        )
         except aiohttp.ClientError as err:
             _LOGGER.error("Login request failed: %s", err)
-            raise SmartSolarAPIError(f"Login request failed: {err}") from err
+            raise SmartSolarConnectionError(f"Login request failed: {err}") from err
 
     async def refresh_token_if_needed(self) -> None:
         """Refresh token if it's close to expiry."""
@@ -173,7 +192,7 @@ class SmartSolarAPI:
                 elif response.status == 404:
                     error_text = await response.text()
                     _LOGGER.error("Project not found (404): %s", error_text)
-                    raise SmartSolarAPIError(
+                    raise SmartSolarNotFoundError(
                         "Project not found. Please check your Project ID.", 
                         404
                     )
@@ -190,7 +209,7 @@ class SmartSolarAPI:
                     )
         except aiohttp.ClientError as err:
             _LOGGER.error("Get project metrics request failed: %s", err)
-            raise SmartSolarAPIError(f"Get project metrics request failed: {err}") from err
+            raise SmartSolarConnectionError(f"Get project metrics request failed: {err}") from err
 
     async def get_metrics(
         self, 

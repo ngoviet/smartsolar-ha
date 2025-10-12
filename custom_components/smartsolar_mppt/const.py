@@ -1,6 +1,7 @@
 """Constants for SmartSolar MPPT integration."""
 
 from datetime import timedelta
+from functools import lru_cache
 
 DOMAIN = "smartsolar_mppt"
 
@@ -128,3 +129,9 @@ STATUS_MAPPING = {
     2: "Dừng sạc, trời hết nắng",
     3: "Fault"
 }
+
+
+@lru_cache(maxsize=None)
+def get_sensor_info(sensor_type: str) -> dict:
+    """Get cached sensor info for better performance."""
+    return SENSOR_TYPES.get(sensor_type, {})

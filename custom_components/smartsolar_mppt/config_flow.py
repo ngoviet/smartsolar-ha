@@ -100,13 +100,14 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._project_id: str | None = None
         self._device_types: list[int] | None = None
 
-    def is_matching(self, other_flow: "ConfigFlow") -> bool:
+    def is_matching(self, other_flow: "ConfigFlow") -> bool:  # type: ignore[override]
         """Check if this config entry matches the current flow."""
-        return hasattr(other_flow, 'domain') and other_flow.domain == DOMAIN
+        # Simply return False to allow multiple instances
+        return False
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> FlowResult:  # type: ignore[override]
         """Handle the initial step."""
         errors: dict[str, str] = {}
 
@@ -150,7 +151,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_mode(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> FlowResult:  # type: ignore[override]
         """Handle the mode selection step."""
         if user_input is not None:
             self._mode = user_input[CONF_MODE]
@@ -167,7 +168,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_project_method(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> FlowResult:  # type: ignore[override]
         """Handle the project method selection step."""
         if user_input is not None:
             self._project_method = user_input["project_method"]
@@ -183,7 +184,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_project_id(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> FlowResult:  # type: ignore[override]
         """Handle the project ID input step."""
         errors: dict[str, str] = {}
 
@@ -217,7 +218,8 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         errors["base"] = "project_not_found"
                     else:
                         errors["base"] = "cannot_connect"
-                except Exception:
+                except (aiohttp.ClientError, ValueError, KeyError) as err:
+                    _LOGGER.error("Error during API test: %s", err)
                     errors["base"] = "unknown"
 
         return self.async_show_form(
@@ -228,7 +230,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_project_devices(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> FlowResult:  # type: ignore[override]
         """Handle the project devices configuration step."""
         errors: dict[str, str] = {}
 
@@ -312,7 +314,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_chipset_ids(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> FlowResult:  # type: ignore[override]
         """Handle the chipset IDs input step."""
         errors: dict[str, str] = {}
 

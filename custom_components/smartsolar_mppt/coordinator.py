@@ -7,7 +7,6 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import translation
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import SmartSolarAPI, SmartSolarAPIError
@@ -38,6 +37,8 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.api = api
         self.entry = entry
+        self.discovered_devices: set[str] = set()
+        self._device_discovery_callbacks: list[callable] = []
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Update data via library."""
@@ -64,7 +65,7 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             self.hass.config.language, "config", {"smartsolar_mppt"}
                         )
                         error_msg = translations.get("config.error.no_configuration", "No chipset_ids or project_id found in configuration")
-                    except Exception:
+                    except (ImportError, KeyError, AttributeError):
                         # Fallback to English if translation fails
                         error_msg = "No chipset_ids or project_id found in configuration"
                     raise UpdateFailed(error_msg)
@@ -77,14 +78,20 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             _LOGGER.debug("API response data: %s", data)
             
-            # Debug project mode data structure
+            # Track discovered devices for project mode
             if mode == "project" and "deviceLogs" in data:
-                _LOGGER.warning("Project mode - deviceLogs count: %s", len(data.get("deviceLogs", [])))
-                for i, device_log in enumerate(data.get("deviceLogs", [])):
-                    device_guid = device_log.get("deviceGuid")
-                    data_streams = device_log.get("dataStreams", [])
-                    _LOGGER.warning("Project mode - deviceLog[%s]: deviceGuid='%s' (type: %s), dataStreams count=%s", 
-                                i, device_guid, type(device_guid), len(data_streams))
+                current_devices = {str(log.get("deviceGuid")) for log in data.get("deviceLogs", []) if log.get("deviceGuid")}
+                new_devices = current_devices - self.discovered_devices
+                
+                if new_devices:
+                    _LOGGER.info("New devices discovered: %s", list(new_devices))
+                    self.discovered_devices.update(new_devices)
+                    # Trigger device discovery callbacks
+                    for callback in self._device_discovery_callbacks:
+                        try:
+                            callback(list(new_devices))
+                        except (ValueError, TypeError, AttributeError) as e:
+                            _LOGGER.error("Error in device discovery callback: %s", e)
 
             # Add metadata to the data
             data["_mode"] = mode
@@ -96,6 +103,14 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except SmartSolarAPIError as err:
             _LOGGER.error("SmartSolar API error: %s", err)
             raise UpdateFailed(f"SmartSolar API error: {err}") from err
-        except Exception as err:
-            _LOGGER.error("Unexpected error: %s", err, exc_info=True)
-            raise UpdateFailed(f"Unexpected error: {err}") from err
+        except (ValueError, TypeError, KeyError) as err:
+            _LOGGER.error("Data processing error: %s", err, exc_info=True)
+            raise UpdateFailed(f"Data processing error: {err}") from err
+
+    def add_device_discovery_callback(self, callback: callable) -> None:
+        """Add a callback to be called when new devices are discovered."""
+        self._device_discovery_callbacks.append(callback)
+
+    def get_discovered_devices(self) -> list[str]:
+        """Get list of currently discovered devices."""
+        return list(self.discovered_devices)

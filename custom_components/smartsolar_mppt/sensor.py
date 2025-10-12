@@ -92,7 +92,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class SmartSolarSensor(CoordinatorEntity[SmartSolarDataUpdateCoordinator], SensorEntity):
+class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
     """Base class for SmartSolar sensors."""
 
     def __init__(
@@ -142,33 +142,31 @@ class SmartSolarSensor(CoordinatorEntity[SmartSolarDataUpdateCoordinator], Senso
             "configuration_url": "https://smartsolar.io.vn/",
         }
 
-    @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        return super().available and self.coordinator.last_update_success
 
     def _get_value_from_data_streams(self, data_streams: list[dict[str, Any]]) -> float | str | None:
-        """Get value from data streams based on sensor type."""
+        """Get value from data streams based on sensor type - optimized version."""
         if not data_streams:
             return None
 
-        # Find data stream by name instead of index
-        for stream in data_streams:
-            if stream.get("name") == self._sensor_type:
-                try:
-                    value = stream.get("value")
-                    if value is None:
-                        return None
-                    
-                    # For status sensor, map number to text
-                    if self._sensor_type == "status":
-                        return STATUS_MAPPING.get(int(value), f"Unknown ({value})")
-                    
-                    return float(value)
-                except (ValueError, TypeError):
-                    return None
+        # Use dict for O(1) lookup instead of list iteration
+        stream_dict = {s["name"]: s["value"] for s in data_streams if s.get("name") and s.get("value") is not None}
+        value = stream_dict.get(self._sensor_type)
         
-        return None
+        if value is None:
+            return None
+        
+        # Handle status mapping
+        if self._sensor_type == "status":
+            try:
+                return STATUS_MAPPING.get(int(value), f"Unknown ({value})")
+            except (ValueError, TypeError):
+                return f"Unknown ({value})"
+        
+        # Convert to float for numeric sensors
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return None
 
 
 class SmartSolarDeviceSensor(SmartSolarSensor):
