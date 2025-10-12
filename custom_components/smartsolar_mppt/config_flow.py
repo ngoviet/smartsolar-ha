@@ -57,7 +57,7 @@ STEP_CHIPSET_IDS_DATA_SCHEMA = vol.Schema(
 
 STEP_PROJECT_DEVICES_DATA_SCHEMA = vol.Schema(
     {
-        vol.Required("manh_quan_count"): vol.All(vol.Coerce(int), vol.Range(min=1, max=10)),
+        vol.Required("manh_quan_count"): str,
         vol.Required("manh_quan_ids"): str,
     }
 )
@@ -151,25 +151,35 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            manh_quan_count = user_input.get("manh_quan_count", 0)
+            manh_quan_count_str = user_input.get("manh_quan_count", "").strip()
             manh_quan_ids = user_input.get("manh_quan_ids", "").strip()
 
             # Validate input
-            if not manh_quan_ids:
+            if not manh_quan_count_str:
+                errors["base"] = "manh_quan_count_required"
+            elif not manh_quan_ids:
                 errors["base"] = "manh_quan_ids_required"
             else:
-                # Parse device IDs
-                all_devices = []
-                device_types = []
+                try:
+                    manh_quan_count = int(manh_quan_count_str)
+                    if manh_quan_count < 1 or manh_quan_count > 10:
+                        errors["base"] = "manh_quan_count_invalid"
+                except ValueError:
+                    errors["base"] = "manh_quan_count_invalid"
                 
-                manh_ids = [id.strip() for id in manh_quan_ids.split(",") if id.strip()]
-                if len(manh_ids) != manh_quan_count:
-                    errors["base"] = "manh_quan_count_mismatch"
-                else:
-                    all_devices.extend(manh_ids)
-                    device_types.extend([DEVICE_TYPE_MANH_QUAN] * manh_quan_count)
-
                 if not errors:
+                    # Parse device IDs
+                    all_devices = []
+                    device_types = []
+                    
+                    manh_ids = [id.strip() for id in manh_quan_ids.split(",") if id.strip()]
+                    if len(manh_ids) != manh_quan_count:
+                        errors["base"] = "manh_quan_count_mismatch"
+                    else:
+                        all_devices.extend(manh_ids)
+                        device_types.extend([DEVICE_TYPE_MANH_QUAN] * manh_quan_count)
+
+                if not errors and all_devices and device_types:
                     self._chipset_ids = all_devices
                     self._device_types = device_types
                     
