@@ -225,9 +225,46 @@ Dự án này được cấp phép theo **MIT License** - xem file LICENSE để
 * **HACS** vì giúp việc cài đặt trở nên dễ dàng
 * **Các contributors** giúp cải thiện integration này
 
-## Ủng hộ
+## 💝 Hỗ trợ phát triển
 
-Nếu bạn thấy integration này hữu ích, hãy cân nhắc hỗ trợ phát triển:
+Nếu bạn thấy integration này hữu ích, hãy ủng hộ tôi một ly cà phê! ☕
+
+### ⚠️ QUAN TRỌNG: Tất cả địa chỉ đều trên mạng BSC (BEP20)
+
+| Crypto | Mạng lưới | Địa chỉ ví BSC |
+|--------|-----------|---------------|
+| ![Bitcoin](https://img.shields.io/badge/Bitcoin-F7931A?style=flat&logo=bitcoin&logoColor=white) | **BSC (BEP20)** | `0x57f07d44fb581cddc028a0c67d63a8cc05aa6caa` |
+| ![Ethereum](https://img.shields.io/badge/Ethereum-3C3C3D?style=flat&logo=Ethereum&logoColor=white) | **BSC (BEP20)** | `0x57f07d44fb581cddc028a0c67d63a8cc05aa6caa` |
+| ![USDT](https://img.shields.io/badge/USDT-26a17b?style=flat&logo=tether&logoColor=white) | **BSC (BEP20)** | `0x57f07d44fb581cddc028a0c67d63a8cc05aa6caa` |
+| ![BNB](https://img.shields.io/badge/BNB-F3BA2F?style=flat&logo=binance&logoColor=white) | **BSC (BEP20)** | `0x57f07d44fb581cddc028a0c67d63a8cc05aa6caa` |
+| ![USDC](https://img.shields.io/badge/USDC-2775CA?style=flat&logo=usd-coin&logoColor=white) | **BSC (BEP20)** | `0x57f07d44fb581cddc028a0c67d63a8cc05aa6caa` |
+| ![CAKE](https://img.shields.io/badge/CAKE-D1884F?style=flat&logo=pancakeswap&logoColor=white) | **BSC (BEP20)** | `0x57f07d44fb581cddc028a0c67d63a8cc05aa6caa` |
+
+> **Lưu ý**: Tất cả địa chỉ đều giống nhau vì cùng một ví BSC!
+
+### 🔍 Cách gửi:
+1. Mở ví (MetaMask, Trust Wallet, Binance, etc.)
+2. Chọn "Gửi" hoặc "Send" → Chọn crypto muốn gửi
+3. Chọn mạng **BSC** hoặc **BNB Smart Chain**
+4. Paste địa chỉ: `0x57f07d44fb581cddc028a0c67d63a8cc05aa6caa`
+5. Gửi với phí cực thấp (~$0.01)
+
+### ✅ Lợi ích:
+- **Phí cực thấp** (chỉ ~$0.01)
+- **Tốc độ nhanh** (3-5 giây)
+- **Dễ dàng và an toàn**
+- **Hỗ trợ nhiều loại coin**
+
+### 🎯 Các coin được hỗ trợ:
+- **Bitcoin (BTC)** - Wrapped BTC trên BSC
+- **Ethereum (ETH)** - Wrapped ETH trên BSC  
+- **USDT** - Tether USD trên BSC
+- **BNB** - Binance Coin (native)
+- **USDC** - USD Coin trên BSC
+- **CAKE** - PancakeSwap token
+- **Và nhiều coin khác** trên BSC!
+
+---
 
 [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-☕-yellow.svg)](https://www.buymeacoffee.com/ngoviet)
 
