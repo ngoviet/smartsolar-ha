@@ -8,6 +8,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import SmartSolarAPI, SmartSolarAPIError
 from .const import DEFAULT_UPDATE_INTERVAL
@@ -49,8 +50,8 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             mode = self.entry.data["mode"]
             project_id = self.entry.data.get("project_id")
 
-            _LOGGER.debug("Fetching metrics - device_type: %s, chipset_ids: %s, mode: %s, project_id: %s", 
-                         device_type, chipset_ids, mode, project_id)
+            _LOGGER.debug("SmartSolar API Update - Interval: %s, Mode: %s", 
+                        self.update_interval, mode)
 
             # Fetch metrics from API
             if project_id:
@@ -98,6 +99,7 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             data["_device_type"] = device_type
             data["_chipset_ids"] = chipset_ids
 
+            _LOGGER.debug("SmartSolar API Update Complete")
             return data
 
         except SmartSolarAPIError as err:

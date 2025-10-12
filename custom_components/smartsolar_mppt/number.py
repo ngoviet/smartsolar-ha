@@ -126,7 +126,14 @@ class UpdateIntervalNumber(CoordinatorEntity, NumberEntity):
         # Update coordinator's update interval
         self.coordinator.update_interval = new_interval
         
-        # Restart the coordinator with new interval
+        # Force restart the coordinator by stopping and starting the timer
+        if hasattr(self.coordinator, '_unsub_refresh'):
+            self.coordinator._unsub_refresh()
+        
+        # Start new timer with new interval
+        self.coordinator._schedule_refresh()
+        
+        # Trigger immediate refresh
         await self.coordinator.async_refresh()
         
         # Update the UI

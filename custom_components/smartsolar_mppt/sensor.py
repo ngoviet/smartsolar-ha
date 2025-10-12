@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
@@ -150,6 +151,7 @@ class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
 
         # Use dict for O(1) lookup instead of list iteration
         stream_dict = {s["name"]: s["value"] for s in data_streams if s.get("name") and s.get("value") is not None}
+        
         value = stream_dict.get(self._sensor_type)
         
         if value is None:
@@ -178,6 +180,7 @@ class SmartSolarDeviceSensor(SmartSolarSensor):
         if not self.coordinator.data:
             _LOGGER.debug("No coordinator data available")
             return None
+        
 
         # For device mode, data is in lastMessage.dataStreams
         last_message = self.coordinator.data.get("lastMessage", {})
@@ -280,19 +283,16 @@ class SmartSolarProjectDeviceSensor(SmartSolarSensor):
         # For project mode individual device, find device in deviceLogs
         device_logs = self.coordinator.data.get("deviceLogs", [])
         
-        _LOGGER.debug("Project device sensor %s - Looking for deviceGuid: '%s' (type: %s)", self._sensor_type, self._device_guid, type(self._device_guid))
-        _LOGGER.debug("Project device sensor %s - Available deviceLogs: %s", self._sensor_type, [log.get("deviceGuid") for log in device_logs])
+        _LOGGER.debug("Project device sensor %s - Looking for deviceGuid: '%s'", self._sensor_type, self._device_guid)
         
         for device_log in device_logs:
             device_guid = device_log.get("deviceGuid")
-            _LOGGER.debug("Project device sensor %s - Checking deviceGuid: '%s' (type: %s)", self._sensor_type, device_guid, type(device_guid))
             
             if str(device_guid) == str(self._device_guid):
                 data_streams = device_log.get("dataStreams", [])
-                _LOGGER.debug("Project device sensor %s - Found matching device, dataStreams: %s", self._sensor_type, data_streams)
                 return self._get_value_from_data_streams(data_streams)
         
-        _LOGGER.warning("Project device sensor %s - No matching device found for GUID: %s", self._sensor_type, self._device_guid)
+        _LOGGER.debug("Project device sensor %s - No matching device found for GUID: %s", self._sensor_type, self._device_guid)
         return None
 
     @cached_property
