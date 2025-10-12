@@ -25,10 +25,9 @@
       },
       "project_devices": {
         "title": "Cấu hình thiết bị dự án",
-        "description": "Nhập số lượng và ID của các thiết bị Sạc MPPT Mạnh Quân",
+        "description": "Nhập danh sách ID thiết bị SmartSolar MPPT Mạnh Quân\n\n**Hướng dẫn:**\n- Nhập các Chipset ID, cách nhau bằng dấu phẩy (,)\n- Không giới hạn số lượng thiết bị\n\n**Ví dụ:**\n- 1 thiết bị: `547611`\n- 2 thiết bị: `547611,14756976`\n- 3 thiết bị: `547611,14756976,123456`",
         "data": {
-          "manh_quan_count": "Số lượng Sạc MPPT Mạnh Quân",
-          "manh_quan_ids": "ID Sạc MPPT Mạnh Quân (phân cách bằng dấu phẩy)"
+          "manh_quan_ids": "Danh sách Chipset ID (cách nhau bằng dấu phẩy)"
         }
       }
     },
@@ -42,10 +41,7 @@
       "chipset_ids_invalid": "ChipsetId không hợp lệ",
       "device_not_found": "Không tìm thấy thiết bị với ChipsetId này",
       "manh_quan_ids_required": "Vui lòng nhập ID cho Sạc MPPT Mạnh Quân",
-      "manh_quan_count_required": "Vui lòng nhập số lượng thiết bị",
-      "manh_quan_count_invalid": "Số lượng thiết bị phải từ 1-10",
       "at_least_one_device_required": "Vui lòng chọn ít nhất một loại thiết bị",
-      "manh_quan_count_mismatch": "Số lượng ID Sạc MPPT Mạnh Quân không khớp",
       "invalid_interval": "Khoảng thời gian phải từ 1-30 giây",
       "invalid_number": "Vui lòng nhập số hợp lệ"
     },

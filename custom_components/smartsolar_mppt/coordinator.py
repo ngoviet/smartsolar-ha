@@ -60,12 +60,12 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             
             # Debug project mode data structure
             if mode == "project" and "deviceLogs" in data:
-                _LOGGER.debug("Project mode - deviceLogs count: %s", len(data.get("deviceLogs", [])))
+                _LOGGER.warning("Project mode - deviceLogs count: %s", len(data.get("deviceLogs", [])))
                 for i, device_log in enumerate(data.get("deviceLogs", [])):
                     device_guid = device_log.get("deviceGuid")
                     data_streams = device_log.get("dataStreams", [])
-                    _LOGGER.debug("Project mode - deviceLog[%s]: deviceGuid=%s, dataStreams count=%s", 
-                                i, device_guid, len(data_streams))
+                    _LOGGER.warning("Project mode - deviceLog[%s]: deviceGuid='%s' (type: %s), dataStreams count=%s", 
+                                i, device_guid, type(device_guid), len(data_streams))
 
             # Add metadata to the data
             data["_mode"] = mode
