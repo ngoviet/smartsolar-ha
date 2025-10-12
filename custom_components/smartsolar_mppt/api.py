@@ -177,13 +177,20 @@ class SmartSolarAPI:
                 # For project mode, use Metric/SynthesisMetrics endpoint
                 params = {"deviceType": device_type}
                 # Add multiple deviceGuids parameters (deviceGuids=547611&deviceGuids=14756976)
-                for chipset_id in chipset_ids:
-                    params["deviceGuids"] = chipset_id
+                # Use aiohttp's params handling to create multiple parameters with same name
+                device_guids_list = chipset_ids  # Keep as list for aiohttp to handle properly
 
-                _LOGGER.warning("Project mode API call - URL: %s, params: %s", API_METRICS_ENDPOINT, params)
+                _LOGGER.warning("Project mode API call - URL: %s, deviceType: %s, deviceGuids: %s", 
+                              API_METRICS_ENDPOINT, device_type, device_guids_list)
+                # Build URL with multiple deviceGuids parameters manually
+                url = f"{API_METRICS_ENDPOINT}?deviceType={device_type}"
+                for chipset_id in chipset_ids:
+                    url += f"&deviceGuids={chipset_id}"
+                
+                _LOGGER.warning("Project mode final URL: %s", url)
+                
                 async with session.get(
-                    API_METRICS_ENDPOINT,
-                    params=params,
+                    url,
                     headers=headers,
                 ) as response:
                     if response.status == 200:
