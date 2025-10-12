@@ -67,6 +67,203 @@ cards:
         unit: V
 ```
 
+### Card nâng cao với Custom Components
+
+Card này sử dụng các custom components để tạo giao diện chuyên nghiệp:
+
+```yaml
+type: custom:stack-in-card
+mode: vertical
+gap: 0
+cards:
+  - type: custom:button-card
+    template: pv_progress_dyn
+    entity: sensor.charge_power
+    variables:
+      design_w: 1400
+      over_pct: 120
+      color_cur: "#43A047"
+      color_base: "#FFC107"
+      color_over: "#D32F2F"
+  - type: custom:mini-graph-card
+    name: Công suất PV 24V – 48h
+    entities:
+      - entity: sensor.charge_power
+        name: Sạc/Xả
+    hours_to_show: 24
+    points_per_hour: 12
+    aggregate_func: avg
+    line_width: 2
+    height: 120
+    color_thresholds:
+      - value: 0
+        color: "#40A96B"
+      - value: 400
+        color: "#12FF76"
+    show:
+      extrema: true
+      average: false
+      legend: false
+      labels: true
+    style: |
+      ha-card {
+        --primary-text-color: #8a8d93;
+        border-radius: 10px;
+      }
+    lower_bound: 0
+    upper_bound: 1400
+  - type: custom:stack-in-card
+    cards:
+      - type: custom:mushroom-chips-card
+        alignment: justify
+        card_mod:
+          style: |
+            ha-card{
+              background: transparent !important;
+              box-shadow: none !important;
+              --chip-height: 22px; --chip-icon-size: 18px; --chip-font-size: 12px;
+              --chip-spacing: 8px; --chip-border-radius: 10px;
+              padding: 2px 4px;
+            }
+        chips:
+          - type: template
+            icon: mdi:label-variant
+            icon_color: grey
+            content: PV (24V)
+          - type: template
+            entity: sensor.charge_power
+            icon: mdi:solar-power
+            icon_color: >
+              {% set p = states('sensor.charge_power')|float(0) %} {{ 'amber' if
+              p>0 else 'grey' }}
+            content: PV {{ (states('sensor.charge_power')|float(0))|round(0) }} W
+            tap_action:
+              action: more-info
+          - type: template
+            entity: sensor.pv_voltage
+            icon: mdi:current-ac
+            icon_color: >
+              {% set v = states('sensor.pv_voltage')|float(0) %} {{ 'blue' if
+              v>0 else 'grey' }}
+            content: V {{ (states('sensor.pv_voltage')|float(0))|round(1) }} V
+            tap_action:
+              action: more-info
+          - type: template
+            entity: sensor.pv_current
+            icon: mdi:current-dc
+            icon_color: >
+              {% set i = states('sensor.pv_current')|float(0) %} {{ 'teal' if
+              i>0 else 'grey' }}
+            content: "{{ (states('sensor.pv_current')|float(0))|round(1) }} A"
+            tap_action:
+              action: more-info
+      - type: custom:mushroom-chips-card
+        alignment: justify
+        card_mod:
+          style: |
+            ha-card{
+              background: transparent !important;
+              box-shadow: none !important;
+              --chip-height: 22px; --chip-icon-size: 18px; --chip-font-size: 12px;
+              --chip-spacing: 8px; --chip-border-radius: 10px;
+              padding: 2px 4px;
+            }
+        chips:
+          - type: template
+            icon: mdi:label-variant
+            icon_color: grey
+            content: Battery (24V)
+          - type: template
+            entity: sensor.battery_voltage
+            icon: mdi:battery
+            icon_color: indigo
+            content: V {{ (states('sensor.battery_voltage')|float(0))|round(2) }} V
+            tap_action:
+              action: more-info
+          - type: template
+            entity: sensor.battery_current
+            icon: mdi:current-dc
+            icon_color: >
+              {% set bi = states('sensor.battery_current')|float(0) %} {{
+              'green' if bi<0 else ('orange' if bi>0 else 'grey') }}
+            content: "{{ (states('sensor.battery_current')|float(0))|round(1) }} A"
+            tap_action:
+              action: more-info
+      - type: custom:mushroom-chips-card
+        alignment: justify
+        card_mod:
+          style: |
+            ha-card{
+              background: transparent !important;
+              box-shadow: none !important;
+              --chip-height: 22px; --chip-icon-size: 18px; --chip-font-size: 12px;
+              --chip-spacing: 8px; --chip-border-radius: 10px;
+              padding: 2px 4px;
+            }
+        chips:
+          - type: template
+            icon: mdi:label-variant
+            icon_color: grey
+            content: Energy
+          - type: template
+            entity: sensor.today_kwh
+            icon: mdi:counter
+            icon_color: amber
+            content: Today {{ (states('sensor.today_kwh')|float(0))|round(2) }} kWh
+            tap_action:
+              action: more-info
+          - type: template
+            entity: sensor.total_kwh
+            icon: mdi:chart-line
+            icon_color: blue
+            content: Total {{ (states('sensor.total_kwh')|float(0))|round(1) }} kWh
+            tap_action:
+              action: more-info
+      - type: custom:mushroom-chips-card
+        alignment: justify
+        card_mod:
+          style: |
+            ha-card{
+              background: transparent !important;
+              box-shadow: none !important;
+              --chip-height: 22px; --chip-icon-size: 18px; --chip-font-size: 12px;
+              --chip-spacing: 8px; --chip-border-radius: 10px;
+              padding: 2px 4px;
+            }
+        chips:
+          - type: template
+            icon: mdi:label-variant
+            icon_color: grey
+            content: Status
+          - type: template
+            entity: sensor.temperature
+            icon: mdi:thermometer
+            icon_color: >
+              {% set t = states('sensor.temperature')|float(0) %} {{ 'green' if
+              t<40 else ('amber' if t<55 else 'red') }}
+            content: Temp {{ (states('sensor.temperature')|float(0))|round(1) }} °C
+            tap_action:
+              action: more-info
+    card_mod:
+      style: >
+        ha-card { background: transparent !important; box-shadow: none
+        !important; }
+```
+
+**Yêu cầu Custom Components:**
+- `custom:stack-in-card` - Tạo layout linh hoạt
+- `custom:button-card` - Card nút tùy chỉnh
+- `custom:mini-graph-card` - Biểu đồ mini
+- `custom:mushroom-chips-card` - Chips hiển thị thông tin
+- `card-mod` - Tùy chỉnh CSS
+
+**Tính năng nổi bật:**
+- **Progress bar** động cho công suất sạc
+- **Biểu đồ** 24h với màu sắc thông minh
+- **Chips** hiển thị thông tin chi tiết
+- **Màu sắc** thay đổi theo giá trị
+- **Tap action** để xem thông tin chi tiết
+
 ### Card biểu đồ năng lượng
 
 ```yaml
