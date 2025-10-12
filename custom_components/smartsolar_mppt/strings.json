@@ -60,7 +60,8 @@
       "invalid_number": "Vui lòng nhập số hợp lệ",
       "project_id_required": "Vui lòng nhập Project ID",
       "project_id_invalid": "Project ID không hợp lệ",
-      "project_not_found": "Không tìm thấy Project với ID này"
+      "project_not_found": "Không tìm thấy Project với ID này",
+      "no_configuration": "Không tìm thấy cấu hình chipset_ids hoặc project_id"
     },
     "abort": {
       "already_configured": "Tích hợp này đã được cấu hình",

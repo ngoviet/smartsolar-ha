@@ -7,6 +7,7 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import translation
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import SmartSolarAPI, SmartSolarAPIError
@@ -57,7 +58,16 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             else:
                 # Use existing logic for device mode or device IDs project mode
                 if not chipset_ids:
-                    raise UpdateFailed("No chipset_ids or project_id found in configuration")
+                    # Get localized error message
+                    try:
+                        translations = await self.hass.helpers.translation.async_get_translations(
+                            self.hass.config.language, "config", {"smartsolar_mppt"}
+                        )
+                        error_msg = translations.get("config.error.no_configuration", "No chipset_ids or project_id found in configuration")
+                    except Exception:
+                        # Fallback to English if translation fails
+                        error_msg = "No chipset_ids or project_id found in configuration"
+                    raise UpdateFailed(error_msg)
                 
                 data = await self.api.get_metrics(
                     device_type=device_type,

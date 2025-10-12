@@ -60,7 +60,8 @@
       "invalid_number": "Please enter a valid number",
       "project_id_required": "Please enter Project ID",
       "project_id_invalid": "Invalid Project ID",
-      "project_not_found": "Project not found with this ID"
+      "project_not_found": "Project not found with this ID",
+      "no_configuration": "No chipset_ids or project_id found in configuration"
     },
     "abort": {
       "already_configured": "This integration is already configured",
