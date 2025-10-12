@@ -198,11 +198,19 @@ class SmartSolarProjectDeviceSensor(SmartSolarSensor):
         # For project mode individual device, find device in deviceLogs
         device_logs = self.coordinator.data.get("deviceLogs", [])
         
+        _LOGGER.debug("Project device sensor %s - Looking for deviceGuid: %s", self._sensor_type, self._device_guid)
+        _LOGGER.debug("Project device sensor %s - Available deviceLogs: %s", self._sensor_type, [log.get("deviceGuid") for log in device_logs])
+        
         for device_log in device_logs:
-            if device_log.get("deviceGuid") == self._device_guid:
+            device_guid = device_log.get("deviceGuid")
+            _LOGGER.debug("Project device sensor %s - Checking deviceGuid: %s (type: %s)", self._sensor_type, device_guid, type(device_guid))
+            
+            if device_guid == self._device_guid:
                 data_streams = device_log.get("dataStreams", [])
+                _LOGGER.debug("Project device sensor %s - Found matching device, dataStreams: %s", self._sensor_type, data_streams)
                 return self._get_value_from_data_streams(data_streams)
         
+        _LOGGER.warning("Project device sensor %s - No matching device found for GUID: %s", self._sensor_type, self._device_guid)
         return None
 
     @property
