@@ -180,40 +180,35 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
         if not self.coordinator.data:
             return None
 
-        # For project mode synthesis, calculate total from all deviceLogs
-        device_logs = self.coordinator.data.get("deviceLogs", [])
+        # For project mode synthesis, get data directly from synthesisStreams
+        synthesis_streams = self.coordinator.data.get("synthesisStreams", [])
         
-        if not device_logs:
-            _LOGGER.debug("Project synthesis sensor %s - No deviceLogs available", self._sensor_type)
+        if not synthesis_streams:
+            _LOGGER.debug("Project synthesis sensor %s - No synthesisStreams available", self._sensor_type)
             return None
         
-        # Calculate total for numeric values, average for others
-        total_value = 0.0
-        count = 0
+        # Map sensor types to API field names
+        api_field_mapping = {
+            "today_kwh": "yield_today",
+            "total_kwh": "yield_total"
+        }
         
-        for device_log in device_logs:
-            data_streams = device_log.get("dataStreams", [])
-            device_value = self._get_value_from_data_streams(data_streams)
-            
-            if device_value is not None:
-                if self._sensor_type in ["today_kwh", "total_kwh", "charge_power", "bat_current"]:
-                    # Sum for energy, power, and battery current
-                    total_value += device_value
-                else:
-                    # Average for voltage, PV current, and temperature
-                    total_value += device_value
-                count += 1
+        # Use mapped field name or original sensor type
+        field_name = api_field_mapping.get(self._sensor_type, self._sensor_type)
         
-        if count == 0:
-            _LOGGER.debug("Project synthesis sensor %s - No valid data from any device", self._sensor_type)
-            return None
+        # Find the synthesis stream with matching name
+        for stream in synthesis_streams:
+            if stream.get("name") == field_name:
+                try:
+                    value = stream.get("value")
+                    if value is None:
+                        return None
+                    return float(value)
+                except (ValueError, TypeError):
+                    return None
         
-        if self._sensor_type in ["today_kwh", "total_kwh", "charge_power", "bat_current"]:
-            # Return sum for energy, power, and battery current
-            return total_value
-        else:
-            # Return average for voltage, PV current, and temperature
-            return total_value / count
+        _LOGGER.debug("Project synthesis sensor %s - Field '%s' not found in synthesisStreams", self._sensor_type, field_name)
+        return None
 
 
 class SmartSolarProjectDeviceSensor(SmartSolarSensor):
