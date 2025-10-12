@@ -12,9 +12,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    DATA_STREAM_INDICES,
-    DEVICE_TYPE_MANH_QUAN,
-    DEVICE_TYPE_SUN_GTIL2,
     DOMAIN,
     MODE_DEVICE,
     MODE_PROJECT,
@@ -37,7 +34,6 @@ async def async_setup_entry(
     ]
 
     mode = config_entry.data["mode"]
-    device_type = config_entry.data["device_type"]
     chipset_ids = config_entry.data["chipset_ids"]
 
     entities: list[SmartSolarSensor] = []
@@ -121,7 +117,6 @@ class SmartSolarSensor(CoordinatorEntity[SmartSolarDataUpdateCoordinator], Senso
             self._attr_state_class = None
 
         # Set device info
-        device_type_name = "Sạc MPPT Mạnh Quân"  # Only support Mạnh Quân now
         mode_name = "Device" if config_entry.data["mode"] == MODE_DEVICE else "Project"
         
         self._attr_device_info = {
@@ -167,7 +162,7 @@ class SmartSolarDeviceSensor(SmartSolarSensor):
     """SmartSolar sensor for device mode."""
 
     @property
-    def native_value(self) -> float | None:
+    def native_value(self) -> float | str | None:
         """Return the state of the sensor."""
         if not self.coordinator.data:
             _LOGGER.debug("No coordinator data available")
@@ -187,7 +182,7 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
     """SmartSolar sensor for project synthesis mode."""
 
     @property
-    def native_value(self) -> float | None:
+    def native_value(self) -> float | str | None:
         """Return the state of the sensor."""
         if not self.coordinator.data:
             return None
@@ -266,7 +261,7 @@ class SmartSolarProjectDeviceSensor(SmartSolarSensor):
     """SmartSolar sensor for individual device in project mode."""
 
     @property
-    def native_value(self) -> float | None:
+    def native_value(self) -> float | str | None:
         """Return the state of the sensor."""
         if not self.coordinator.data:
             return None
@@ -292,4 +287,9 @@ class SmartSolarProjectDeviceSensor(SmartSolarSensor):
     @property
     def name(self) -> str:
         """Return the name of the sensor."""
-        return f"{self._sensor_info['name']} ({self._device_guid[:8]}...)"
+        if self._sensor_info and self._device_guid:
+            return f"{self._sensor_info['name']} ({self._device_guid[:8]}...)"
+        elif self._device_guid:
+            return f"Unknown ({self._device_guid[:8]}...)"
+        else:
+            return "Unknown Device"

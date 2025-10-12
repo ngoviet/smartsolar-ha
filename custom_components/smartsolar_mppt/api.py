@@ -227,7 +227,6 @@ class SmartSolarAPI:
                         raise SmartSolarAPIError(f"Device API failed: {error_text}", response.status)
             else:
                 # For project mode, use Metric/SynthesisMetrics endpoint
-                params = {"deviceType": device_type}
                 # Add multiple deviceGuids parameters (deviceGuids=547611&deviceGuids=14756976)
                 # Use aiohttp's params handling to create multiple parameters with same name
                 device_guids_list = chipset_ids  # Keep as list for aiohttp to handle properly

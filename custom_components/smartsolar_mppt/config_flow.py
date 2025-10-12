@@ -7,7 +7,7 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
@@ -19,17 +19,12 @@ from .const import (
     CONF_MODE,
     CONF_PASSWORD,
     CONF_PROJECT_ID,
-    CONF_UPDATE_INTERVAL,
     CONF_USERNAME,
-    DEFAULT_UPDATE_INTERVAL,
     DEVICE_TYPE_MANH_QUAN,
-    DEVICE_TYPE_SUN_GTIL2,
     DOMAIN,
     ERROR_CANNOT_CONNECT,
     ERROR_INVALID_CREDENTIALS,
     ERROR_UNKNOWN,
-    MAX_UPDATE_INTERVAL,
-    MIN_UPDATE_INTERVAL,
     MODE_DEVICE,
     MODE_PROJECT,
     PROJECT_MODE_BY_DEVICES,
@@ -194,6 +189,8 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 # Test API call with project ID
                 try:
+                    assert self._username is not None
+                    assert self._password is not None
                     api = SmartSolarAPI(
                         username=self._username,
                         password=self._password,
@@ -231,6 +228,10 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             manh_quan_ids = user_input.get("manh_quan_ids", "").strip()
 
+            # Initialize variables
+            all_devices: list[str] = []
+            device_types: list[int] = []
+            
             # Validate input
             if not manh_quan_ids:
                 errors["base"] = "manh_quan_ids_required"
@@ -243,58 +244,58 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors["base"] = "manh_quan_ids_required"
                 else:
                     # No maximum limit - users can add as many devices as needed
-                    all_devices = []
-                    device_types = []
-                    
                     all_devices.extend(manh_ids)
                     device_types.extend([DEVICE_TYPE_MANH_QUAN] * manh_quan_count)
 
-                if not errors and all_devices and device_types:
-                    self._chipset_ids = all_devices
-                    self._device_types = device_types
+            if not errors and all_devices and device_types:
+                self._chipset_ids = all_devices
+                self._device_types = device_types
+                
+                # Test the configuration
+                try:
+                    assert self._username is not None
+                    assert self._password is not None
+                    assert self._mode is not None
+                    api = SmartSolarAPI(
+                        username=self._username,
+                        password=self._password,
+                        hass=self.hass,
+                    )
                     
-                    # Test the configuration
-                    try:
-                        api = SmartSolarAPI(
-                            username=self._username,
-                            password=self._password,
-                            hass=self.hass,
-                        )
-                        
-                        # Test with first device
-                        await api.get_metrics(
-                            device_type=device_types[0],
-                            chipset_ids=[all_devices[0]],
-                            mode=self._mode,
-                        )
-                        
-                        # Create unique ID for this configuration
-                        unique_id = f"{self._username}_{self._mode}_{'_'.join(all_devices)}"
-                        
-                        await self.async_set_unique_id(unique_id)
-                        self._abort_if_unique_id_configured()
-                        
-                        return self.async_create_entry(
-                            title=f"SmartSolar MPPT ({self._mode.title()})",
-                            data={
-                                CONF_USERNAME: self._username,
-                                CONF_PASSWORD: self._password,
-                                CONF_MODE: self._mode,
-                                CONF_DEVICE_TYPE: device_types[0],  # Primary device type
-                                CONF_CHIPSET_IDS: self._chipset_ids,
-                                "device_types": self._device_types,  # All device types
-                            },
-                        )
-                        
-                    except SmartSolarAPIError as err:
-                        if err.status_code == 404:
-                            errors["base"] = "device_not_found"
-                        else:
-                            errors["base"] = ERROR_CANNOT_CONNECT
-                        _LOGGER.error("API error during test: %s", err)
-                    except Exception as err:
-                        _LOGGER.error("Unexpected error during test: %s", err)
-                        errors["base"] = ERROR_UNKNOWN
+                    # Test with first device
+                    await api.get_metrics(
+                        device_type=device_types[0],
+                        chipset_ids=[all_devices[0]],
+                        mode=self._mode,
+                    )
+                    
+                    # Create unique ID for this configuration
+                    unique_id = f"{self._username}_{self._mode}_{'_'.join(all_devices)}"
+                    
+                    await self.async_set_unique_id(unique_id)
+                    self._abort_if_unique_id_configured()
+                    
+                    return self.async_create_entry(
+                        title=f"SmartSolar MPPT ({self._mode.title()})",
+                        data={
+                            CONF_USERNAME: self._username,
+                            CONF_PASSWORD: self._password,
+                            CONF_MODE: self._mode,
+                            CONF_DEVICE_TYPE: device_types[0],  # Primary device type
+                            CONF_CHIPSET_IDS: self._chipset_ids,
+                            "device_types": self._device_types,  # All device types
+                        },
+                    )
+                    
+                except SmartSolarAPIError as err:
+                    if err.status_code == 404:
+                        errors["base"] = "device_not_found"
+                    else:
+                        errors["base"] = ERROR_CANNOT_CONNECT
+                    _LOGGER.error("API error during test: %s", err)
+                except Exception as err:
+                    _LOGGER.error("Unexpected error during test: %s", err)
+                    errors["base"] = ERROR_UNKNOWN
 
         return self.async_show_form(
             step_id="project_devices",
@@ -324,6 +325,10 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     
                     # Test the configuration
                     try:
+                        assert self._username is not None
+                        assert self._password is not None
+                        assert self._device_type is not None
+                        assert self._mode is not None
                         api = SmartSolarAPI(
                             username=self._username,
                             password=self._password,
@@ -380,10 +385,17 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def _create_entry(self) -> FlowResult:
         """Create the config entry."""
+        # Assert required values are not None
+        assert self._username is not None
+        assert self._password is not None
+        assert self._mode is not None
+        assert self._device_type is not None
+        
         # Create unique ID for this configuration
         if self._project_id:
             unique_id = f"{self._username}_{self._mode}_{self._device_type}_{self._project_id}"
         else:
+            assert self._chipset_ids is not None
             unique_id = f"{self._username}_{self._mode}_{self._device_type}_{'_'.join(self._chipset_ids)}"
         
         await self.async_set_unique_id(unique_id)
