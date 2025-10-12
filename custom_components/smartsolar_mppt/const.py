@@ -106,10 +106,15 @@ CONF_MODE = "mode"
 CONF_DEVICE_TYPE = "device_type"
 CONF_CHIPSET_IDS = "chipset_ids"
 CONF_UPDATE_INTERVAL = "update_interval"
+CONF_PROJECT_ID = "project_id"
 
 # Integration modes
 MODE_DEVICE = "device"
 MODE_PROJECT = "project"
+
+# Project mode configuration types
+PROJECT_MODE_BY_ID = "project_by_id"
+PROJECT_MODE_BY_DEVICES = "project_by_devices"
 
 # Error messages
 ERROR_INVALID_CREDENTIALS = "invalid_credentials"

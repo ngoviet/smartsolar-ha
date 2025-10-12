@@ -23,6 +23,20 @@
           "chipset_ids": "Chipset ID"
         }
       },
+      "project_method": {
+        "title": "Select Project Integration Method",
+        "description": "Choose how to integrate Project:\n\n• **By Project ID (recommended):**\n  - Simple, only need one ID\n  - Automatically gets all devices in project\n  \n• **By Device IDs list:**\n  - Enter individual Chipset IDs\n  - Suitable when selecting specific devices",
+        "data": {
+          "project_method": "Method"
+        }
+      },
+      "project_id": {
+        "title": "Enter Project ID",
+        "description": "Enter Project ID from SmartSolar management page\n\n**How to get Project ID:**\n\nStep 1: Login to SmartSolar\n  → Visit: https://smartsolar.io.vn\n\nStep 2: Go to Project management page\n  → Click \"Dự án\" menu or visit: https://smartsolar.io.vn/Project\n\nStep 3: Create new Project (if not exists)\n  → Click \"Thêm mới\" button\n  → Enter Project name (e.g., \"Home\")\n  → Add devices to Project\n  → Save\n\nStep 4: View Project to get ID\n  → Click on Project name in list\n  → Check URL in browser address bar:\n     https://smartsolar.io.vn/Monitor/Project?projectId=1072\n  → Take number after \"projectId=\" → that's Project ID\n\n**Specific examples:**\n- URL: smartsolar.io.vn/Monitor/Project?projectId=1072\n  → Enter: 1072\n\n- URL: smartsolar.io.vn/Monitor/Project?projectId=2048\n  → Enter: 2048\n\n**Note:**\n- Project must contain at least 1 device\n- Enter only the number, not the full URL",
+        "data": {
+          "project_id": "Project ID"
+        }
+      },
       "project_devices": {
         "title": "Project Device Configuration",
         "description": "Enter the list of SmartSolar MPPT Mạnh Quân device IDs\n\n**Instructions:**\n- Enter Chipset IDs, separated by commas (,)\n- No limit on number of devices\n\n**Examples:**\n- 1 device: `547611`\n- 2 devices: `547611,14756976`\n- 3 devices: `547611,14756976,123456`",
@@ -43,7 +57,10 @@
       "manh_quan_ids_required": "Please enter IDs for SmartSolar MPPT Mạnh Quân",
       "at_least_one_device_required": "Please select at least one device type",
       "invalid_interval": "Interval must be between 1-30 seconds",
-      "invalid_number": "Please enter a valid number"
+      "invalid_number": "Please enter a valid number",
+      "project_id_required": "Please enter Project ID",
+      "project_id_invalid": "Invalid Project ID",
+      "project_not_found": "Project not found with this ID"
     },
     "abort": {
       "already_configured": "This integration is already configured",

@@ -18,6 +18,7 @@ from .const import (
     CONF_DEVICE_TYPE,
     CONF_MODE,
     CONF_PASSWORD,
+    CONF_PROJECT_ID,
     CONF_UPDATE_INTERVAL,
     CONF_USERNAME,
     DEFAULT_UPDATE_INTERVAL,
@@ -31,6 +32,8 @@ from .const import (
     MIN_UPDATE_INTERVAL,
     MODE_DEVICE,
     MODE_PROJECT,
+    PROJECT_MODE_BY_DEVICES,
+    PROJECT_MODE_BY_ID,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -61,6 +64,25 @@ STEP_PROJECT_DEVICES_DATA_SCHEMA = vol.Schema(
     }
 )
 
+STEP_PROJECT_METHOD_DATA_SCHEMA = vol.Schema(
+    {
+        vol.Required("project_method"): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    {"value": PROJECT_MODE_BY_ID, "label": "Theo Project ID (khuyến nghị)"},
+                    {"value": PROJECT_MODE_BY_DEVICES, "label": "Theo danh sách Device IDs"}
+                ]
+            )
+        )
+    }
+)
+
+STEP_PROJECT_ID_DATA_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_PROJECT_ID): str
+    }
+)
+
 # Options schema removed - TextSelector doesn't support min/max
 # Using vol.Schema directly in async_step_init instead
 
@@ -77,6 +99,8 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._mode: str | None = None
         self._device_type: int | None = None
         self._chipset_ids: list[str] | None = None
+        self._project_method: str | None = None
+        self._project_id: str | None = None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -132,13 +156,71 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._device_type = DEVICE_TYPE_MANH_QUAN  # Default to Sạc MPPT Mạnh Quân
                 return await self.async_step_chipset_ids()
             else:  # MODE_PROJECT
-                return await self.async_step_project_devices()
+                return await self.async_step_project_method()
 
         return self.async_show_form(
             step_id="mode",
             data_schema=STEP_MODE_DATA_SCHEMA,
         )
 
+    async def async_step_project_method(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle the project method selection step."""
+        if user_input is not None:
+            self._project_method = user_input["project_method"]
+            if self._project_method == PROJECT_MODE_BY_ID:
+                return await self.async_step_project_id()
+            else:  # PROJECT_MODE_BY_DEVICES
+                return await self.async_step_project_devices()
+
+        return self.async_show_form(
+            step_id="project_method",
+            data_schema=STEP_PROJECT_METHOD_DATA_SCHEMA,
+        )
+
+    async def async_step_project_id(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle the project ID input step."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            project_id = user_input.get(CONF_PROJECT_ID, "").strip()
+
+            # Validate input
+            if not project_id:
+                errors["base"] = "project_id_required"
+            else:
+                # Test API call with project ID
+                try:
+                    api = SmartSolarAPI(
+                        username=self._username,
+                        password=self._password,
+                        hass=self.hass,
+                    )
+                    await api.login()
+                    await api.get_project_metrics(project_id)
+                    await api.close()
+                    
+                    # Success - save configuration
+                    self._project_id = project_id
+                    self._device_type = DEVICE_TYPE_MANH_QUAN  # Default for project mode
+                    return await self._create_entry()
+                    
+                except SmartSolarAPIError as err:
+                    if err.status_code == 404:
+                        errors["base"] = "project_not_found"
+                    else:
+                        errors["base"] = "cannot_connect"
+                except Exception:
+                    errors["base"] = "unknown"
+
+        return self.async_show_form(
+            step_id="project_id",
+            data_schema=STEP_PROJECT_ID_DATA_SCHEMA,
+            errors=errors,
+        )
 
     async def async_step_project_devices(
         self, user_input: dict[str, Any] | None = None
@@ -294,6 +376,35 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=STEP_CHIPSET_IDS_DATA_SCHEMA,
             errors=errors,
             description_placeholders={"help_text": help_text},
+        )
+
+    async def _create_entry(self) -> FlowResult:
+        """Create the config entry."""
+        # Create unique ID for this configuration
+        if self._project_id:
+            unique_id = f"{self._username}_{self._mode}_{self._device_type}_{self._project_id}"
+        else:
+            unique_id = f"{self._username}_{self._mode}_{self._device_type}_{'_'.join(self._chipset_ids)}"
+        
+        await self.async_set_unique_id(unique_id)
+        self._abort_if_unique_id_configured()
+        
+        # Prepare data
+        data = {
+            CONF_USERNAME: self._username,
+            CONF_PASSWORD: self._password,
+            CONF_MODE: self._mode,
+            CONF_DEVICE_TYPE: self._device_type,
+        }
+        
+        if self._project_id:
+            data[CONF_PROJECT_ID] = self._project_id
+        else:
+            data[CONF_CHIPSET_IDS] = self._chipset_ids
+        
+        return self.async_create_entry(
+            title=f"SmartSolar MPPT ({self._mode.title()})",
+            data=data,
         )
 
 

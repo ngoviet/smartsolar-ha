@@ -45,16 +45,22 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             device_type = self.entry.data["device_type"]
             chipset_ids = self.entry.data["chipset_ids"]
             mode = self.entry.data["mode"]
+            project_id = self.entry.data.get("project_id")
 
-            _LOGGER.debug("Fetching metrics - device_type: %s, chipset_ids: %s, mode: %s", 
-                         device_type, chipset_ids, mode)
+            _LOGGER.debug("Fetching metrics - device_type: %s, chipset_ids: %s, mode: %s, project_id: %s", 
+                         device_type, chipset_ids, mode, project_id)
 
             # Fetch metrics from API
-            data = await self.api.get_metrics(
-                device_type=device_type,
-                chipset_ids=chipset_ids,
-                mode=mode,
-            )
+            if project_id:
+                # Use project ID for project mode
+                data = await self.api.get_project_metrics(project_id)
+            else:
+                # Use existing logic for device mode or device IDs project mode
+                data = await self.api.get_metrics(
+                    device_type=device_type,
+                    chipset_ids=chipset_ids,
+                    mode=mode,
+                )
 
             _LOGGER.debug("API response data: %s", data)
             

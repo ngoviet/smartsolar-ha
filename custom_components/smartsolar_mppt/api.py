@@ -140,6 +140,58 @@ class SmartSolarAPI:
         else:
             _LOGGER.debug("Token is still valid")
 
+    async def get_project_metrics(self, project_id: str) -> dict[str, Any]:
+        """Get metrics by Project ID."""
+        await self.refresh_token_if_needed()
+
+        if not self._token:
+            raise SmartSolarAPIError("No valid token available")
+
+        session = await self._get_session()
+        
+        headers = {
+            "Authorization": f"Bearer {self._token}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            url = f"{API_BASE_URL}/Metric/ProjectMetrics?projectId={project_id}"
+            _LOGGER.debug("Project metrics API call - URL: %s", url)
+            
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    
+                    # Normalize deviceGuid to string for consistent matching
+                    if "deviceLogs" in data:
+                        for device_log in data["deviceLogs"]:
+                            if "deviceGuid" in device_log:
+                                device_log["deviceGuid"] = str(device_log["deviceGuid"])
+                    
+                    _LOGGER.debug("Successfully fetched project metrics from SmartSolar API")
+                    return data
+                elif response.status == 404:
+                    error_text = await response.text()
+                    _LOGGER.error("Project not found (404): %s", error_text)
+                    raise SmartSolarAPIError(
+                        "Project not found. Please check your Project ID.", 
+                        404
+                    )
+                else:
+                    error_text = await response.text()
+                    _LOGGER.error(
+                        "Get project metrics failed with status %s: %s", 
+                        response.status, 
+                        error_text
+                    )
+                    raise SmartSolarAPIError(
+                        f"Get project metrics failed: {error_text}", 
+                        response.status
+                    )
+        except aiohttp.ClientError as err:
+            _LOGGER.error("Get project metrics request failed: %s", err)
+            raise SmartSolarAPIError(f"Get project metrics request failed: {err}") from err
+
     async def get_metrics(
         self, 
         device_type: int, 
