@@ -79,7 +79,7 @@ SENSOR_TYPES = {
     },
     "status": {
         "name": "Status",
-        "unit": "",
+        "unit": None,
         "icon": "mdi:information",
         "device_class": None,
         "state_class": None,

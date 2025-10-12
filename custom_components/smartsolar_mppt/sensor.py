@@ -109,7 +109,7 @@ class SmartSolarSensor(CoordinatorEntity[SmartSolarDataUpdateCoordinator], Senso
 
         # Set basic attributes
         self._attr_name = sensor_info["name"]
-        self._attr_native_unit_of_measurement = sensor_info["unit"]
+        self._attr_native_unit_of_measurement = sensor_info.get("unit")
         self._attr_icon = sensor_info["icon"]
         self._attr_device_class = sensor_info.get("device_class")
         
