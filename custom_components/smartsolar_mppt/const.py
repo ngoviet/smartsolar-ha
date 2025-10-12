@@ -115,3 +115,11 @@ MODE_PROJECT = "project"
 ERROR_INVALID_CREDENTIALS = "invalid_credentials"
 ERROR_CANNOT_CONNECT = "cannot_connect"
 ERROR_UNKNOWN = "unknown"
+
+# Status mapping
+STATUS_MAPPING = {
+    0: "Đang online",
+    1: "Charging", 
+    2: "Dừng sạc, trời hết nắng",
+    3: "Fault"
+}

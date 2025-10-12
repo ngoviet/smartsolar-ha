@@ -19,6 +19,7 @@ from .const import (
     MODE_DEVICE,
     MODE_PROJECT,
     SENSOR_TYPES,
+    STATUS_MAPPING,
 )
 from .coordinator import SmartSolarDataUpdateCoordinator
 
@@ -132,7 +133,7 @@ class SmartSolarSensor(CoordinatorEntity[SmartSolarDataUpdateCoordinator], Senso
         """Return True if entity is available."""
         return self.coordinator.last_update_success
 
-    def _get_value_from_data_streams(self, data_streams: list[dict[str, Any]]) -> float | None:
+    def _get_value_from_data_streams(self, data_streams: list[dict[str, Any]]) -> float | str | None:
         """Get value from data streams based on sensor type."""
         if not data_streams:
             return None
@@ -144,6 +145,11 @@ class SmartSolarSensor(CoordinatorEntity[SmartSolarDataUpdateCoordinator], Senso
                     value = stream.get("value")
                     if value is None:
                         return None
+                    
+                    # For status sensor, map number to text
+                    if self._sensor_type == "status":
+                        return STATUS_MAPPING.get(int(value), f"Unknown ({value})")
+                    
                     return float(value)
                 except (ValueError, TypeError):
                     return None
@@ -230,7 +236,9 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
                 return None
             
             # Return average status
-            return total_status / count
+            avg_status = total_status / count
+            # Map status number to text
+            return STATUS_MAPPING.get(int(avg_status), f"Unknown ({avg_status})")
         
         _LOGGER.debug("Project synthesis sensor %s - Field '%s' not found in synthesisStreams", self._sensor_type, field_name)
         return None
