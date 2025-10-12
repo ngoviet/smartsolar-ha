@@ -35,7 +35,7 @@ async def async_setup_entry(
     ]
 
     mode = config_entry.data["mode"]
-    chipset_ids = config_entry.data["chipset_ids"]
+    chipset_ids = config_entry.data.get("chipset_ids")
 
     entities: list[SmartSolarSensor] = []
 
@@ -65,17 +65,18 @@ async def async_setup_entry(
             )
 
         # Individual device sensors
-        for device_guid in chipset_ids:
-            for sensor_type, sensor_info in SENSOR_TYPES.items():
-                entities.append(
-                    SmartSolarProjectDeviceSensor(
-                        coordinator=coordinator,
-                        config_entry=config_entry,
-                        sensor_type=sensor_type,
-                        sensor_info=sensor_info,
-                        device_guid=device_guid,
+        if chipset_ids:
+            for device_guid in chipset_ids:
+                for sensor_type, sensor_info in SENSOR_TYPES.items():
+                    entities.append(
+                        SmartSolarProjectDeviceSensor(
+                            coordinator=coordinator,
+                            config_entry=config_entry,
+                            sensor_type=sensor_type,
+                            sensor_info=sensor_info,
+                            device_guid=device_guid,
+                        )
                     )
-                )
 
     async_add_entities(entities)
 
