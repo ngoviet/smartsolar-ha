@@ -237,9 +237,9 @@ Nếu bạn thấy integration này hữu ích, hãy ủng hộ tôi một ly c�
 | ![Ethereum](https://img.shields.io/badge/Ethereum-3C3C3D?style=flat&logo=Ethereum&logoColor=white) | **BSC (BEP20)** | `0x57f07d44fb581cddc028a0c67d63a8cc05aa6caa` |
 | ![USDT](https://img.shields.io/badge/USDT-26a17b?style=flat&logo=tether&logoColor=white) | **BSC (BEP20)** | `0x57f07d44fb581cddc028a0c67d63a8cc05aa6caa` |
 | ![BNB](https://img.shields.io/badge/BNB-F3BA2F?style=flat&logo=binance&logoColor=white) | **BSC (BEP20)** | `0x57f07d44fb581cddc028a0c67d63a8cc05aa6caa` |
-| ![USDC](https://img.shields.io/badge/USDC-2775CA?style=flat&logo=usd-coin&logoColor=white) | **BSC (BEP20)** | `0x57f07d44fb581cddc028a0c67d63a8cc05aa6caa` |
+| ![USDC](https://img.shields.io/badge/USDC-2775CA?style=flat&logo=circle&logoColor=white) | **BSC (BEP20)** | `0x57f07d44fb581cddc028a0c67d63a8cc05aa6caa` |
 | ![BUSD](https://img.shields.io/badge/BUSD-F0B90B?style=flat&logo=binance&logoColor=white) | **BSC (BEP20)** | `0x57f07d44fb581cddc028a0c67d63a8cc05aa6caa` |
-| ![CAKE](https://img.shields.io/badge/CAKE-D1884F?style=flat&logo=pancakeswap&logoColor=white) | **BSC (BEP20)** | `0x57f07d44fb581cddc028a0c67d63a8cc05aa6caa` |
+| ![CAKE](https://img.shields.io/badge/CAKE-D1884F?style=flat&logo=circle&logoColor=white) | **BSC (BEP20)** | `0x57f07d44fb581cddc028a0c67d63a8cc05aa6caa` |
 
 > **Lưu ý**: Tất cả địa chỉ đều giống nhau vì cùng một ví BSC!
 
