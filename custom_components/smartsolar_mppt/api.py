@@ -176,8 +176,9 @@ class SmartSolarAPI:
             else:
                 # For project mode, use Metric/SynthesisMetrics endpoint
                 params = {"deviceType": device_type}
-                # Join all chipset_ids with comma for API
-                params["deviceGuids"] = ",".join(chipset_ids)
+                # Add multiple deviceGuids parameters (deviceGuids=547611&deviceGuids=14756976)
+                for chipset_id in chipset_ids:
+                    params["deviceGuids"] = chipset_id
 
                 _LOGGER.warning("Project mode API call - URL: %s, params: %s", API_METRICS_ENDPOINT, params)
                 async with session.get(
