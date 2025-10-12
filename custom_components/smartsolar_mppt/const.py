@@ -82,7 +82,7 @@ SENSOR_TYPES = {
         "unit": "",
         "icon": "mdi:information",
         "device_class": None,
-        "state_class": "measurement",
+        "state_class": None,
     },
 }
 
