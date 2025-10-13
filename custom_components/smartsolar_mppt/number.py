@@ -106,15 +106,6 @@ class UpdateIntervalNumber(CoordinatorEntity, NumberEntity):  # type: ignore[mis
             return self.coordinator.update_interval.total_seconds()
         return 5.0
 
-    def set_native_value(self, value: float) -> None:
-        """Set new update interval (sync version)."""
-        # This is required by NumberEntity but we use async version
-        _LOGGER.warning("set_native_value called, use async_set_native_value instead")
-
-    def set_value(self, value: float) -> None:
-        """Set new update interval (legacy version)."""
-        # This is required by NumberEntity but we use async version
-        _LOGGER.warning("set_value called, use async_set_native_value instead")
 
     async def async_set_native_value(self, value: float) -> None:
         """Set new update interval."""
