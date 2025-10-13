@@ -111,20 +111,40 @@ class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
         self._sensor_info = sensor_info
         self._device_guid = device_guid
 
-        # Set unique ID
-        if device_guid:
-            self._attr_unique_id = f"{config_entry.entry_id}_device_{device_guid}_{sensor_type}"
-        else:
-            self._attr_unique_id = f"{config_entry.entry_id}_synthesis_{sensor_type}"
-
-        # Set basic attributes with project ID prefix if available
-        base_name = sensor_info["name"]
+        # Set unique ID with proper prefix
+        mode = config_entry.data.get("mode")
         project_id = config_entry.data.get("project_id")
+        chipset_ids = config_entry.data.get("chipset_ids")
         
-        if project_id and config_entry.data["mode"] == MODE_PROJECT and not device_guid:
-            # This is a synthesis sensor in project mode, add project ID prefix
-            self._attr_name = f"{project_id}_{base_name}"
+        if mode == MODE_DEVICE:
+            # Device mode: d_{device_id}
+            prefix = f"d_{chipset_ids[0] if chipset_ids else 'unknown'}"
+        elif mode == MODE_PROJECT:
+            if device_guid:
+                # Individual device in project mode
+                if project_id:
+                    prefix = f"pd_{device_guid}"  # Project with ID
+                else:
+                    prefix = f"md_{device_guid}"  # Multi-device
+            else:
+                # Synthesis sensor in project mode
+                if project_id:
+                    prefix = f"p_{project_id}"  # Project with ID
+                else:
+                    prefix = f"m_{chipset_ids[0] if chipset_ids else 'unknown'}"  # Multi-device
         else:
+            prefix = "unknown"
+        
+        self._attr_unique_id = f"{config_entry.entry_id}_{prefix}_{sensor_type}"
+
+        # Set basic attributes (name without prefix)
+        base_name = sensor_info["name"]
+        
+        if device_guid:
+            # Individual device sensor: add device ID to name
+            self._attr_name = f"{base_name} ({device_guid})"
+        else:
+            # Synthesis or single device sensor: clean name
             self._attr_name = base_name
             
         self._attr_native_unit_of_measurement = sensor_info.get("unit")
@@ -139,13 +159,15 @@ class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
             self._attr_state_class = None
 
         # Set device info
-        mode_name = "Device" if config_entry.data["mode"] == MODE_DEVICE else "Project"
+        mode = config_entry.data.get("mode")
         project_id = config_entry.data.get("project_id")
         
-        if project_id and config_entry.data["mode"] == MODE_PROJECT:
+        if mode == MODE_PROJECT and project_id:
             device_name = f"SmartSolar MPPT Project {project_id}"
+        elif mode == MODE_PROJECT:
+            device_name = f"SmartSolar MPPT Project"
         else:
-            device_name = f"SmartSolar MPPT {mode_name}"
+            device_name = f"SmartSolar MPPT Device"
         
         self._attr_device_info = {
             "identifiers": {(DOMAIN, config_entry.entry_id)},

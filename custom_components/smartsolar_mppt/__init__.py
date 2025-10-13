@@ -65,13 +65,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     device_registry = dr.async_get(hass)
     
     # Set device name based on mode and project ID
-    mode = entry.data.get('mode', 'Device')
+    mode = entry.data.get('mode', 'device')
     project_id = entry.data.get('project_id')
     
-    if project_id and mode == 'project':
+    if mode == 'project' and project_id:
         device_name = f"SmartSolar MPPT Project {project_id}"
+    elif mode == 'project':
+        device_name = f"SmartSolar MPPT Project"
     else:
-        device_name = f"SmartSolar MPPT {mode.title()}"
+        device_name = f"SmartSolar MPPT Device"
     
     device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
