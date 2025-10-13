@@ -111,6 +111,12 @@ class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
         self._sensor_info = sensor_info
         self._device_guid = device_guid
 
+        # Debug: Log all parameters for troubleshooting
+        _LOGGER.debug(
+            "Creating sensor - Type: %s, Mode: %s, Project ID: %s, Chipset IDs: %s, Device GUID: %s",
+            sensor_type, mode, project_id, chipset_ids, device_guid
+        )
+
         # Set unique ID with proper prefix
         mode = config_entry.data.get("mode")
         project_id = config_entry.data.get("project_id")
@@ -118,7 +124,7 @@ class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
         
         if mode == MODE_DEVICE:
             # Device mode: d_{device_id}
-            prefix = f"d_{chipset_ids[0] if chipset_ids else 'unknown'}"
+            prefix = f"d_{device_guid if device_guid else 'unknown'}"
         elif mode == MODE_PROJECT:
             if device_guid:
                 # Individual device in project mode
@@ -136,6 +142,12 @@ class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
             prefix = "unknown"
         
         self._attr_unique_id = f"{config_entry.entry_id}_{prefix}_{sensor_type}"
+
+        # Debug: Log generated unique_id
+        _LOGGER.debug(
+            "Generated unique_id: %s (prefix: %s, sensor_type: %s)",
+            self._attr_unique_id, prefix, sensor_type
+        )
 
         # Set basic attributes (name without prefix)
         base_name = sensor_info["name"]
