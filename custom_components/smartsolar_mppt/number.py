@@ -34,7 +34,7 @@ async def async_setup_entry(
     async_add_entities([UpdateIntervalNumber(coordinator, entry)])
 
 
-class UpdateIntervalNumber(CoordinatorEntity, NumberEntity):
+class UpdateIntervalNumber(CoordinatorEntity, NumberEntity):  # type: ignore[misc]
     """Number entity for update interval."""
 
     _attr_has_entity_name = True
@@ -69,8 +69,8 @@ class UpdateIntervalNumber(CoordinatorEntity, NumberEntity):
             return
             
         try:
-            translations = await self._hass.helpers.translation.async_get_translations(
-                self._hass.config.language, "config", {"smartsolar_mppt"}
+            translations = await translation.async_get_translations(
+                self._hass, self._hass.config.language, "config", {"smartsolar_mppt"}
             )
             
             # Update name
@@ -83,11 +83,11 @@ class UpdateIntervalNumber(CoordinatorEntity, NumberEntity):
             if unit_key in translations:
                 self._attr_native_unit_of_measurement = translations[unit_key]
                 
-        except Exception as e:
+        except (ValueError, TypeError, KeyError, AttributeError) as e:
             _LOGGER.warning("Could not load translations: %s", e)
 
     @property
-    def device_info(self):
+    def device_info(self) -> dict[str, Any] | None:
         """Return device info."""
         return {
             "identifiers": {(DOMAIN, self._entry.entry_id)},
@@ -99,12 +99,22 @@ class UpdateIntervalNumber(CoordinatorEntity, NumberEntity):
             "configuration_url": "https://smartsolar.io.vn/",
         }
 
-    @property
-    def native_value(self) -> float:
+    @property  # type: ignore[override]
+    def native_value(self) -> float | None:
         """Return current update interval in seconds."""
         if self.coordinator.update_interval:
             return self.coordinator.update_interval.total_seconds()
-        return 5
+        return 5.0
+
+    def set_native_value(self, value: float) -> None:
+        """Set new update interval (sync version)."""
+        # This is required by NumberEntity but we use async version
+        _LOGGER.warning("set_native_value called, use async_set_native_value instead")
+
+    def set_value(self, value: float) -> None:
+        """Set new update interval (legacy version)."""
+        # This is required by NumberEntity but we use async version
+        _LOGGER.warning("set_value called, use async_set_native_value instead")
 
     async def async_set_native_value(self, value: float) -> None:
         """Set new update interval."""
@@ -127,11 +137,12 @@ class UpdateIntervalNumber(CoordinatorEntity, NumberEntity):
         self.coordinator.update_interval = new_interval
         
         # Force restart the coordinator by stopping and starting the timer
-        if hasattr(self.coordinator, '_unsub_refresh'):
-            self.coordinator._unsub_refresh()
+        if hasattr(self.coordinator, '_unsub_refresh') and self.coordinator._unsub_refresh:
+            self.coordinator._unsub_refresh()  # type: ignore[attr-defined]
         
         # Start new timer with new interval
-        self.coordinator._schedule_refresh()
+        if hasattr(self.coordinator, '_schedule_refresh'):
+            self.coordinator._schedule_refresh()  # type: ignore[attr-defined]
         
         # Trigger immediate refresh
         await self.coordinator.async_refresh()
