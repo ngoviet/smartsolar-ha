@@ -117,8 +117,16 @@ class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
         else:
             self._attr_unique_id = f"{config_entry.entry_id}_synthesis_{sensor_type}"
 
-        # Set basic attributes
-        self._attr_name = sensor_info["name"]
+        # Set basic attributes with project ID prefix if available
+        base_name = sensor_info["name"]
+        project_id = config_entry.data.get("project_id")
+        
+        if project_id and config_entry.data["mode"] == MODE_PROJECT and not device_guid:
+            # This is a synthesis sensor in project mode, add project ID prefix
+            self._attr_name = f"{project_id}_{base_name}"
+        else:
+            self._attr_name = base_name
+            
         self._attr_native_unit_of_measurement = sensor_info.get("unit")
         self._attr_icon = sensor_info["icon"]
         self._attr_device_class = sensor_info.get("device_class")
@@ -132,10 +140,16 @@ class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
 
         # Set device info
         mode_name = "Device" if config_entry.data["mode"] == MODE_DEVICE else "Project"
+        project_id = config_entry.data.get("project_id")
+        
+        if project_id and config_entry.data["mode"] == MODE_PROJECT:
+            device_name = f"SmartSolar MPPT Project {project_id}"
+        else:
+            device_name = f"SmartSolar MPPT {mode_name}"
         
         self._attr_device_info = {
             "identifiers": {(DOMAIN, config_entry.entry_id)},
-            "name": f"SmartSolar MPPT {mode_name}",
+            "name": device_name,
             "manufacturer": "SmartSolar",
             "model": "MPPT Controller",
             "sw_version": "1.0.0",
@@ -198,12 +212,16 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
     def native_value(self) -> float | str | None:
         """Return the state of the sensor."""
         if not self.coordinator.data:
+            _LOGGER.debug("Synthesis sensor %s - No coordinator data", self._sensor_type)
             return None
 
         # For project mode synthesis, get data directly from synthesisStreams
         synthesis_streams = self.coordinator.data.get("synthesisStreams", [])
         
+        _LOGGER.debug("Synthesis sensor %s - synthesisStreams: %s", self._sensor_type, synthesis_streams)
+        
         if not synthesis_streams:
+            _LOGGER.debug("Synthesis sensor %s - No synthesisStreams available", self._sensor_type)
             return None
         
         # Map sensor types to API field names
@@ -214,46 +232,55 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
         
         # Use mapped field name or original sensor type
         field_name = api_field_mapping.get(self._sensor_type, self._sensor_type)
+        _LOGGER.debug("Synthesis sensor %s - Looking for field: %s", self._sensor_type, field_name)
         
         # Find the synthesis stream with matching name
         for stream in synthesis_streams:
+            _LOGGER.debug("Synthesis sensor %s - Checking stream: %s", self._sensor_type, stream)
             if stream.get("name") == field_name:
                 try:
                     value = stream.get("value")
+                    _LOGGER.debug("Synthesis sensor %s - Found value: %s", self._sensor_type, value)
                     if value is None:
                         return None
                     return float(value)
                 except (ValueError, TypeError):
+                    _LOGGER.debug("Synthesis sensor %s - Value conversion failed: %s", self._sensor_type, value)
                     return None
+        
+        # If not found in synthesisStreams, calculate from individual devices
+        _LOGGER.debug("Synthesis sensor %s - Field '%s' not found in synthesisStreams, calculating from deviceLogs", self._sensor_type, field_name)
+        return self._calculate_from_device_logs()
+    
+    def _calculate_from_device_logs(self) -> float | str | None:
+        """Calculate synthesis value from individual device logs."""
+        device_logs = self.coordinator.data.get("deviceLogs", [])
+        if not device_logs:
+            _LOGGER.debug("Synthesis sensor %s - No deviceLogs available for calculation", self._sensor_type)
+            return None
         
         # For status, calculate average from deviceLogs since it's not in synthesisStreams
         if self._sensor_type == "status":
-            device_logs = self.coordinator.data.get("deviceLogs", [])
-            if not device_logs:
-                return None
-            
             total_status = 0.0
             count = 0
             
             for device_log in device_logs:
                 data_streams = device_log.get("dataStreams", [])
-                device_status = self._get_value_from_data_streams(data_streams)
                 
-                if device_status is not None:
-                    # For status calculation, we need the raw numeric value, not the mapped string
-                    # Find the raw status value from data streams
-                    raw_status = None
-                    for stream in data_streams:
-                        if stream.get("name") == "status":
-                            try:
-                                raw_status = float(stream.get("value", 0))
-                                break
-                            except (ValueError, TypeError):
-                                raw_status = 0
-                    
-                    if raw_status is not None:
-                        total_status += raw_status
-                        count += 1
+                # For status calculation, we need the raw numeric value, not the mapped string
+                # Find the raw status value from data streams
+                raw_status = None
+                for stream in data_streams:
+                    if stream.get("name") == "status":
+                        try:
+                            raw_status = float(stream.get("value", 0))
+                            break
+                        except (ValueError, TypeError):
+                            raw_status = 0
+                
+                if raw_status is not None:
+                    total_status += raw_status
+                    count += 1
             
             if count == 0:
                 return None
@@ -263,7 +290,26 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
             # Map status number to text
             return STATUS_MAPPING.get(int(avg_status), f"Unknown ({avg_status})")
         
-        return None
+        # For other sensors, calculate sum from individual devices
+        total_value = 0.0
+        count = 0
+        
+        for device_log in device_logs:
+            data_streams = device_log.get("dataStreams", [])
+            device_value = self._get_value_from_data_streams(data_streams)
+            
+            if device_value is not None and isinstance(device_value, (int, float)):
+                total_value += device_value
+                count += 1
+        
+        if count == 0:
+            return None
+        
+        # Return sum for most sensors, average for status
+        if self._sensor_type == "status":
+            return total_value / count
+        else:
+            return total_value
 
 
 class SmartSolarProjectDeviceSensor(SmartSolarSensor):
