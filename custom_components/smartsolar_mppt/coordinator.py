@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.util import dt as dt_util
+from homeassistant.helpers import translation
+# from homeassistant.util import dt as dt_util
 
 from .api import SmartSolarAPI, SmartSolarAPIError
 from .const import DEFAULT_UPDATE_INTERVAL
@@ -39,16 +40,24 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.api = api
         self.entry = entry
         self.discovered_devices: set[str] = set()
-        self._device_discovery_callbacks: list[callable] = []
+        self._device_discovery_callbacks: list[Callable] = []
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Update data via library."""
         try:
-            # Get configuration from entry
-            device_type = self.entry.data["device_type"]
+            # Get configuration from entry with validation
+            device_type = self.entry.data.get("device_type")
             chipset_ids = self.entry.data.get("chipset_ids")
-            mode = self.entry.data["mode"]
+            mode = self.entry.data.get("mode")
             project_id = self.entry.data.get("project_id")
+            
+            # Validate required fields
+            if not device_type:
+                raise UpdateFailed("Missing device_type in configuration")
+            if not mode:
+                raise UpdateFailed("Missing mode in configuration")
+            if not project_id and not chipset_ids:
+                raise UpdateFailed("Missing both project_id and chipset_ids in configuration")
 
             _LOGGER.debug("SmartSolar API Update - Interval: %s, Mode: %s", 
                         self.update_interval, mode)
@@ -62,8 +71,8 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if not chipset_ids:
                     # Get localized error message
                     try:
-                        translations = await self.hass.helpers.translation.async_get_translations(
-                            self.hass.config.language, "config", {"smartsolar_mppt"}
+                        translations = await translation.async_get_translations(
+                            self.hass, self.hass.config.language, "config", {"smartsolar_mppt"}
                         )
                         error_msg = translations.get("config.error.no_configuration", "No chipset_ids or project_id found in configuration")
                     except (ImportError, KeyError, AttributeError):

@@ -81,7 +81,11 @@ class SmartSolarAPI:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     loop.create_task(self._session.close())
-            except (RuntimeError, asyncio.CancelledError):
+            except (RuntimeError, asyncio.CancelledError, AttributeError):
+                # Event loop may be closed or not available
+                pass
+            except (ValueError, TypeError, KeyError, AttributeError):
+                # Any other error during cleanup should not raise
                 pass
 
     async def login(self) -> dict[str, Any]:
@@ -250,14 +254,14 @@ class SmartSolarAPI:
                 # Use aiohttp's params handling to create multiple parameters with same name
                 device_guids_list = chipset_ids  # Keep as list for aiohttp to handle properly
 
-                _LOGGER.warning("Project mode API call - URL: %s, deviceType: %s, deviceGuids: %s", 
+                _LOGGER.debug("Project mode API call - URL: %s, deviceType: %s, deviceGuids: %s", 
                               API_METRICS_ENDPOINT, device_type, device_guids_list)
                 # Build URL with multiple deviceGuids parameters manually
                 url = f"{API_METRICS_ENDPOINT}?deviceType={device_type}"
                 for chipset_id in chipset_ids:
                     url += f"&deviceGuids={chipset_id}"
                 
-                _LOGGER.warning("Project mode final URL: %s", url)
+                _LOGGER.debug("Project mode final URL: %s", url)
                 
                 async with session.get(
                     url,

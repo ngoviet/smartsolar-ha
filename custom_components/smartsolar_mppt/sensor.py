@@ -11,7 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
+# from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
@@ -113,9 +113,9 @@ class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
 
         # Set unique ID
         if device_guid:
-            self._attr_unique_id = f"{config_entry.entry_id}_{sensor_type}_{device_guid}"
+            self._attr_unique_id = f"{config_entry.entry_id}_device_{device_guid}_{sensor_type}"
         else:
-            self._attr_unique_id = f"{config_entry.entry_id}_{sensor_type}"
+            self._attr_unique_id = f"{config_entry.entry_id}_synthesis_{sensor_type}"
 
         # Set basic attributes
         self._attr_name = sensor_info["name"]
@@ -174,7 +174,7 @@ class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
 class SmartSolarDeviceSensor(SmartSolarSensor):
     """SmartSolar sensor for device mode."""
 
-    @cached_property
+    @property
     def native_value(self) -> float | str | None:
         """Return the state of the sensor."""
         if not self.coordinator.data:
@@ -186,8 +186,7 @@ class SmartSolarDeviceSensor(SmartSolarSensor):
         last_message = self.coordinator.data.get("lastMessage", {})
         data_streams = last_message.get("dataStreams", [])
         
-        _LOGGER.debug("Device sensor %s - lastMessage: %s", self._sensor_type, last_message)
-        _LOGGER.debug("Device sensor %s - dataStreams: %s", self._sensor_type, data_streams)
+        # Debug info removed for production
         
         return self._get_value_from_data_streams(data_streams)
 
@@ -195,7 +194,7 @@ class SmartSolarDeviceSensor(SmartSolarSensor):
 class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
     """SmartSolar sensor for project synthesis mode."""
 
-    @cached_property
+    @property
     def native_value(self) -> float | str | None:
         """Return the state of the sensor."""
         if not self.coordinator.data:
@@ -205,7 +204,6 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
         synthesis_streams = self.coordinator.data.get("synthesisStreams", [])
         
         if not synthesis_streams:
-            _LOGGER.debug("Project synthesis sensor %s - No synthesisStreams available", self._sensor_type)
             return None
         
         # Map sensor types to API field names
@@ -232,7 +230,6 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
         if self._sensor_type == "status":
             device_logs = self.coordinator.data.get("deviceLogs", [])
             if not device_logs:
-                _LOGGER.debug("Project synthesis sensor %s - No deviceLogs available for status calculation", self._sensor_type)
                 return None
             
             total_status = 0.0
@@ -259,7 +256,6 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
                         count += 1
             
             if count == 0:
-                _LOGGER.debug("Project synthesis sensor %s - No valid status data from any device", self._sensor_type)
                 return None
             
             # Return average status
@@ -267,14 +263,13 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
             # Map status number to text
             return STATUS_MAPPING.get(int(avg_status), f"Unknown ({avg_status})")
         
-        _LOGGER.debug("Project synthesis sensor %s - Field '%s' not found in synthesisStreams", self._sensor_type, field_name)
         return None
 
 
 class SmartSolarProjectDeviceSensor(SmartSolarSensor):
     """SmartSolar sensor for individual device in project mode."""
 
-    @cached_property
+    @property
     def native_value(self) -> float | str | None:
         """Return the state of the sensor."""
         if not self.coordinator.data:
@@ -283,7 +278,7 @@ class SmartSolarProjectDeviceSensor(SmartSolarSensor):
         # For project mode individual device, find device in deviceLogs
         device_logs = self.coordinator.data.get("deviceLogs", [])
         
-        _LOGGER.debug("Project device sensor %s - Looking for deviceGuid: '%s'", self._sensor_type, self._device_guid)
+        # Looking for specific device in deviceLogs
         
         for device_log in device_logs:
             device_guid = device_log.get("deviceGuid")
@@ -292,7 +287,6 @@ class SmartSolarProjectDeviceSensor(SmartSolarSensor):
                 data_streams = device_log.get("dataStreams", [])
                 return self._get_value_from_data_streams(data_streams)
         
-        _LOGGER.debug("Project device sensor %s - No matching device found for GUID: %s", self._sensor_type, self._device_guid)
         return None
 
     @cached_property
