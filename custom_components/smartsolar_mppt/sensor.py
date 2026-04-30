@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from functools import cached_property
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
@@ -11,7 +10,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-# from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
@@ -19,6 +17,7 @@ from .const import (
     MODE_PROJECT,
     SENSOR_TYPES,
     STATUS_MAPPING,
+    build_device_info,
 )
 from .coordinator import SmartSolarDataUpdateCoordinator
 
@@ -96,6 +95,12 @@ async def async_setup_entry(
 class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
     """Base class for SmartSolar sensors."""
 
+    __slots__ = (
+        "_config_entry", "_sensor_type", "_sensor_info", "_device_guid",
+        "_attr_unique_id", "_attr_name", "_attr_native_unit_of_measurement",
+        "_attr_icon", "_attr_device_class", "_attr_state_class", "_attr_device_info",
+    )
+
     def __init__(
         self,
         coordinator: SmartSolarDataUpdateCoordinator,
@@ -111,17 +116,15 @@ class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
         self._sensor_info = sensor_info
         self._device_guid = device_guid
 
-        # Debug: Log all parameters for troubleshooting
+        mode = config_entry.data.get("mode")
+        project_id = config_entry.data.get("project_id")
+        chipset_ids = config_entry.data.get("chipset_ids")
+
         _LOGGER.debug(
             "Creating sensor - Type: %s, Mode: %s, Project ID: %s, Chipset IDs: %s, Device GUID: %s",
             sensor_type, mode, project_id, chipset_ids, device_guid
         )
 
-        # Set unique ID with proper prefix
-        mode = config_entry.data.get("mode")
-        project_id = config_entry.data.get("project_id")
-        chipset_ids = config_entry.data.get("chipset_ids")
-        
         if mode == MODE_DEVICE:
             # Device mode: d_{device_id}
             prefix = f"d_{device_guid if device_guid else 'unknown'}"
@@ -170,26 +173,9 @@ class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
         else:
             self._attr_state_class = None
 
-        # Set device info
-        mode = config_entry.data.get("mode")
-        project_id = config_entry.data.get("project_id")
-        
-        if mode == MODE_PROJECT and project_id:
-            device_name = f"SmartSolar MPPT Project {project_id}"
-        elif mode == MODE_PROJECT:
-            device_name = f"SmartSolar MPPT Project"
-        else:
-            device_name = f"SmartSolar MPPT Device"
-        
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, config_entry.entry_id)},
-            "name": device_name,
-            "manufacturer": "SmartSolar",
-            "model": "MPPT Controller",
-            "sw_version": "1.0.0",
-            "hw_version": "MPPT",
-            "configuration_url": "https://smartsolar.io.vn/",
-        }
+        self._attr_device_info = build_device_info(
+            config_entry.entry_id, mode, project_id
+        )
 
 
     def _get_value_from_data_streams(self, data_streams: list[dict[str, Any]]) -> float | str | None:
@@ -246,44 +232,28 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
     def native_value(self) -> float | str | None:
         """Return the state of the sensor."""
         if not self.coordinator.data:
-            _LOGGER.debug("Synthesis sensor %s - No coordinator data", self._sensor_type)
             return None
 
-        # For project mode synthesis, get data directly from synthesisStreams
         synthesis_streams = self.coordinator.data.get("synthesisStreams", [])
-        
-        _LOGGER.debug("Synthesis sensor %s - synthesisStreams: %s", self._sensor_type, synthesis_streams)
-        
         if not synthesis_streams:
-            _LOGGER.debug("Synthesis sensor %s - No synthesisStreams available", self._sensor_type)
             return None
-        
-        # Map sensor types to API field names
+
         api_field_mapping = {
             "today_kwh": "yield_today",
-            "total_kwh": "yield_total"
+            "total_kwh": "yield_total",
         }
-        
-        # Use mapped field name or original sensor type
         field_name = api_field_mapping.get(self._sensor_type, self._sensor_type)
-        _LOGGER.debug("Synthesis sensor %s - Looking for field: %s", self._sensor_type, field_name)
-        
-        # Find the synthesis stream with matching name
+
         for stream in synthesis_streams:
-            _LOGGER.debug("Synthesis sensor %s - Checking stream: %s", self._sensor_type, stream)
             if stream.get("name") == field_name:
                 try:
                     value = stream.get("value")
-                    _LOGGER.debug("Synthesis sensor %s - Found value: %s", self._sensor_type, value)
                     if value is None:
                         return None
                     return float(value)
                 except (ValueError, TypeError):
-                    _LOGGER.debug("Synthesis sensor %s - Value conversion failed: %s", self._sensor_type, value)
                     return None
-        
-        # If not found in synthesisStreams, calculate from individual devices
-        _LOGGER.debug("Synthesis sensor %s - Field '%s' not found in synthesisStreams, calculating from deviceLogs", self._sensor_type, field_name)
+
         return self._calculate_from_device_logs()
     
     def _calculate_from_device_logs(self) -> float | str | None:
@@ -355,27 +325,11 @@ class SmartSolarProjectDeviceSensor(SmartSolarSensor):
         if not self.coordinator.data:
             return None
 
-        # For project mode individual device, find device in deviceLogs
         device_logs = self.coordinator.data.get("deviceLogs", [])
-        
-        # Looking for specific device in deviceLogs
-        
         for device_log in device_logs:
-            device_guid = device_log.get("deviceGuid")
-            
-            if str(device_guid) == str(self._device_guid):
-                data_streams = device_log.get("dataStreams", [])
-                return self._get_value_from_data_streams(data_streams)
-        
+            if str(device_log.get("deviceGuid")) == str(self._device_guid):
+                return self._get_value_from_data_streams(
+                    device_log.get("dataStreams", [])
+                )
         return None
-
-    @cached_property
-    def name(self) -> str:
-        """Return the name of the sensor."""
-        if self._sensor_info and self._device_guid:
-            return f"{self._sensor_info['name']} ({self._device_guid[:8]}...)"
-        elif self._device_guid:
-            return f"Unknown ({self._device_guid[:8]}...)"
-        else:
-            return "Unknown Device"
 

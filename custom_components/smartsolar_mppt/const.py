@@ -1,7 +1,7 @@
 """Constants for SmartSolar MPPT integration."""
 
 from datetime import timedelta
-from functools import lru_cache
+from typing import Any
 
 DOMAIN = "smartsolar_mppt"
 
@@ -12,7 +12,7 @@ API_METRICS_ENDPOINT = f"{API_BASE_URL}/Metric/SynthesisMetrics"
 
 # Device Types
 DEVICE_TYPE_SUN_GTIL2 = 1  # Inverter Sun-GTIL2
-DEVICE_TYPE_MANH_QUAN = 2  # Sạc MPPT Mạnh Quân
+DEVICE_TYPE_MANH_QUAN = 2  # S?c MPPT M?nh Qu?n
 
 # Update intervals
 DEFAULT_UPDATE_INTERVAL = timedelta(seconds=5)  # 5 seconds
@@ -87,26 +87,12 @@ SENSOR_TYPES = {
     },
 }
 
-# Data stream indices (based on API response structure)
-DATA_STREAM_INDICES = {
-    "pv_voltage": 0,
-    "pv_current": 1, 
-    "bat_voltage": 2,
-    "bat_current": 3,
-    "charge_power": 4,
-    "today_kwh": 5,
-    "total_kwh": 6,
-    "temperature": 7,
-    "status": 8,
-}
-
 # Configuration keys
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 CONF_MODE = "mode"
 CONF_DEVICE_TYPE = "device_type"
 CONF_CHIPSET_IDS = "chipset_ids"
-CONF_UPDATE_INTERVAL = "update_interval"
 CONF_PROJECT_ID = "project_id"
 
 # Integration modes
@@ -122,16 +108,34 @@ ERROR_INVALID_CREDENTIALS = "invalid_credentials"
 ERROR_CANNOT_CONNECT = "cannot_connect"
 ERROR_UNKNOWN = "unknown"
 
-# Status mapping
+# Status mapping (English keys, Vietnamese in translation files)
 STATUS_MAPPING = {
-    0: "Đang online",
-    1: "Charging", 
-    2: "Dừng sạc, trời hết nắng",
-    3: "Fault"
+    0: "Online",
+    1: "Charging",
+    2: "Idle (No Sun)",
+    3: "Fault",
 }
 
 
-@lru_cache(maxsize=None)
 def get_sensor_info(sensor_type: str) -> dict:
-    """Get cached sensor info for better performance."""
+    """Get sensor info from SENSOR_TYPES dict."""
     return SENSOR_TYPES.get(sensor_type, {})
+
+
+def build_device_info(entry_id: str, mode: str | None = None, project_id: str | None = None) -> dict[str, Any]:
+    """Build shared DeviceInfo dict for SmartSolar MPPT entities."""
+    if mode == "project" and project_id:
+        device_name = f"SmartSolar MPPT Project {project_id}"
+    elif mode == "project":
+        device_name = "SmartSolar MPPT Project"
+    else:
+        device_name = "SmartSolar MPPT Device"
+    return {
+        "identifiers": {(DOMAIN, entry_id)},
+        "name": device_name,
+        "manufacturer": "SmartSolar",
+        "model": "MPPT Controller",
+        "sw_version": "1.2.0",
+        "hw_version": "MPPT",
+        "configuration_url": "https://smartsolar.io.vn/",
+    }

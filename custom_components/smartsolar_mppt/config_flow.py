@@ -9,8 +9,7 @@ import aiohttp
 
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.config_entries import ConfigFlow
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
 
@@ -88,6 +87,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for SmartSolar MPPT."""
 
     VERSION = 1
+    MINOR_VERSION = 1
 
     def __init__(self) -> None:
         """Initialize the config flow."""
@@ -107,7 +107,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:  # type: ignore[override]
+    ) -> ConfigFlowResult:  # type: ignore[override]
         """Handle the initial step."""
         errors: dict[str, str] = {}
 
@@ -151,7 +151,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_mode(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:  # type: ignore[override]
+    ) -> ConfigFlowResult:  # type: ignore[override]
         """Handle the mode selection step."""
         if user_input is not None:
             self._mode = user_input[CONF_MODE]
@@ -168,7 +168,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_project_method(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:  # type: ignore[override]
+    ) -> ConfigFlowResult:  # type: ignore[override]
         """Handle the project method selection step."""
         if user_input is not None:
             self._project_method = user_input["project_method"]
@@ -184,7 +184,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_project_id(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:  # type: ignore[override]
+    ) -> ConfigFlowResult:  # type: ignore[override]
         """Handle the project ID input step."""
         errors: dict[str, str] = {}
 
@@ -197,16 +197,18 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 # Test API call with project ID
                 try:
-                    assert self._username is not None
-                    assert self._password is not None
+                    if not self._username or not self._password:
+                        raise ValueError("Missing credentials")
                     api = SmartSolarAPI(
                         username=self._username,
                         password=self._password,
                         hass=self.hass,
                     )
-                    await api.login()
-                    await api.get_project_metrics(project_id)
-                    await api.close()
+                    try:
+                        await api.login()
+                        await api.get_project_metrics(project_id)
+                    finally:
+                        await api.close()
                     
                     # Success - save configuration
                     self._project_id = project_id
@@ -230,7 +232,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_project_devices(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:  # type: ignore[override]
+    ) -> ConfigFlowResult:  # type: ignore[override]
         """Handle the project devices configuration step."""
         errors: dict[str, str] = {}
 
@@ -262,9 +264,8 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 
                 # Test the configuration
                 try:
-                    assert self._username is not None
-                    assert self._password is not None
-                    assert self._mode is not None
+                    if self._username is None or self._password is None or self._mode is None:
+                        raise ValueError("Missing credentials")
                     api = SmartSolarAPI(
                         username=self._username,
                         password=self._password,
@@ -314,7 +315,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_chipset_ids(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:  # type: ignore[override]
+    ) -> ConfigFlowResult:  # type: ignore[override]
         """Handle the chipset IDs input step."""
         errors: dict[str, str] = {}
 
@@ -334,16 +335,14 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     
                     # Test the configuration
                     try:
-                        assert self._username is not None
-                        assert self._password is not None
-                        assert self._device_type is not None
-                        assert self._mode is not None
+                        if self._username is None or self._password is None or self._device_type is None or self._mode is None:
+                            raise ValueError("Missing credentials")
                         api = SmartSolarAPI(
                             username=self._username,
                             password=self._password,
                             hass=self.hass,
                         )
-                        
+
                         # Test with the first chipset ID
                         await api.get_metrics(
                             device_type=self._device_type,
@@ -392,19 +391,35 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={"help_text": help_text},
         )
 
-    async def _create_entry(self) -> FlowResult:
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Handle reconfigure flow (HA 2024.3+)."""
+        reconfigure_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        if not reconfigure_entry:
+            return self.async_abort(reason="unknown_entry")
+        if user_input is not None:
+            self.hass.config_entries.async_update_entry(reconfigure_entry, data=user_input)
+            await self.hass.config_entries.async_reload(reconfigure_entry.entry_id)
+            return self.async_abort(reason="reauth_successful")
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema({
+                vol.Required(CONF_USERNAME, default=reconfigure_entry.data.get(CONF_USERNAME, "")): str,
+                vol.Required(CONF_PASSWORD, default=reconfigure_entry.data.get(CONF_PASSWORD, "")): str,
+            }),
+        )
+
+    async def _create_entry(self) -> ConfigFlowResult:
         """Create the config entry."""
         # Assert required values are not None
-        assert self._username is not None
-        assert self._password is not None
-        assert self._mode is not None
-        assert self._device_type is not None
-        
+        if self._username is None or self._password is None or self._mode is None or self._device_type is None:
+            raise ValueError("Missing required config fields")
+
         # Create unique ID for this configuration
         if self._project_id:
             unique_id = f"{self._username}_{self._mode}_{self._device_type}_{self._project_id}"
         else:
-            assert self._chipset_ids is not None
+            if self._chipset_ids is None:
+                raise ValueError("Missing chipset_ids")
             unique_id = f"{self._username}_{self._mode}_{self._device_type}_{'_'.join(self._chipset_ids)}"
         
         await self.async_set_unique_id(unique_id)

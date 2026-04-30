@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.helpers import translation
-# from homeassistant.util import dt as dt_util
 
 from .api import SmartSolarAPI, SmartSolarAPIError
 from .const import DEFAULT_UPDATE_INTERVAL
@@ -19,6 +17,8 @@ _LOGGER = logging.getLogger(__name__)
 
 class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Class to manage fetching data from the SmartSolar API."""
+
+    __slots__ = ("api", "entry", "discovered_devices")
 
     def __init__(
         self,
@@ -30,17 +30,17 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Initialize the coordinator."""
         if update_interval is None:
             update_interval = DEFAULT_UPDATE_INTERVAL
-            
+
         super().__init__(
             hass,
             _LOGGER,
             name="SmartSolar MPPT",
             update_interval=update_interval,
+            always_update=False,
         )
         self.api = api
         self.entry = entry
         self.discovered_devices: set[str] = set()
-        self._device_discovery_callbacks: list[Callable] = []
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Update data via library."""
@@ -69,16 +69,7 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             else:
                 # Use existing logic for device mode or device IDs project mode
                 if not chipset_ids:
-                    # Get localized error message
-                    try:
-                        translations = await translation.async_get_translations(
-                            self.hass, self.hass.config.language, "config", {"smartsolar_mppt"}
-                        )
-                        error_msg = translations.get("config.error.no_configuration", "No chipset_ids or project_id found in configuration")
-                    except (ImportError, KeyError, AttributeError):
-                        # Fallback to English if translation fails
-                        error_msg = "No chipset_ids or project_id found in configuration"
-                    raise UpdateFailed(error_msg)
+                    raise UpdateFailed("No chipset_ids or project_id found in configuration")
                 
                 data = await self.api.get_metrics(
                     device_type=device_type,
@@ -117,11 +108,3 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except (ValueError, TypeError, KeyError) as err:
             _LOGGER.error("Data processing error: %s", err, exc_info=True)
             raise UpdateFailed(f"Data processing error: {err}") from err
-
-    def add_device_discovery_callback(self, callback: callable) -> None:
-        """Add a callback to be called when new devices are discovered."""
-        self._device_discovery_callbacks.append(callback)
-
-    def get_discovered_devices(self) -> list[str]:
-        """Get list of currently discovered devices."""
-        return list(self.discovered_devices)

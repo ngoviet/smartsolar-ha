@@ -15,7 +15,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import device_registry as dr
 
 from .api import SmartSolarAPI
-from .const import DEFAULT_UPDATE_INTERVAL, DOMAIN
+from .const import DEFAULT_UPDATE_INTERVAL, DOMAIN, build_device_info
 from .coordinator import SmartSolarDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -52,38 +52,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         update_interval=timedelta(seconds=update_interval),
     )
 
-    # Fetch initial data
-    await coordinator.async_config_entry_first_refresh()
-
     # Store coordinator
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    # Set up platforms
+    # Set up platforms BEFORE first refresh so entities exist even if API is down
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Fetch initial data (non-blocking - platforms are already set up)
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except Exception:
+        _LOGGER.warning("Initial data fetch failed, will retry on next interval")
 
     # Create device registry entry
     device_registry = dr.async_get(hass)
-    
-    # Set device name based on mode and project ID
-    mode = entry.data.get('mode', 'device')
-    project_id = entry.data.get('project_id')
-    
-    if mode == 'project' and project_id:
-        device_name = f"SmartSolar MPPT Project {project_id}"
-    elif mode == 'project':
-        device_name = f"SmartSolar MPPT Project"
-    else:
-        device_name = f"SmartSolar MPPT Device"
-    
+    mode = entry.data.get("mode", "device")
+    project_id = entry.data.get("project_id")
+    device_info = build_device_info(entry.entry_id, mode, project_id)
     device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
-        identifiers={(DOMAIN, entry.entry_id)},
-        name=device_name,
-        manufacturer="SmartSolar",
-        model="MPPT Controller",
-        sw_version="1.0.0",
-        hw_version="MPPT",
-        configuration_url="https://smartsolar.io.vn/",
+        **device_info,
     )
 
     # Register services

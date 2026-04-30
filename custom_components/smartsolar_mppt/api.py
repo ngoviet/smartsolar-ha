@@ -73,21 +73,6 @@ class SmartSolarAPI:
             await self._session.close()
             self._session = None
 
-    def __del__(self):
-        """Cleanup on deletion."""
-        if hasattr(self, '_session') and self._session and not self._session.closed:
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(self._session.close())
-            except (RuntimeError, asyncio.CancelledError, AttributeError):
-                # Event loop may be closed or not available
-                pass
-            except (ValueError, TypeError, KeyError, AttributeError):
-                # Any other error during cleanup should not raise
-                pass
-
     async def login(self) -> dict[str, Any]:
         """Login to SmartSolar API and get token."""
         session = await self._get_session()
@@ -307,6 +292,8 @@ class SmartSolarAPI:
             return True
         except SmartSolarAPIError:
             return False
+        finally:
+            await self.close()
 
     @property
     def token(self) -> str | None:
