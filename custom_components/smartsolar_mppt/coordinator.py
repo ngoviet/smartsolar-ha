@@ -83,16 +83,9 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if mode == "project" and "deviceLogs" in data:
                 current_devices = {str(log.get("deviceGuid")) for log in data.get("deviceLogs", []) if log.get("deviceGuid")}
                 new_devices = current_devices - self.discovered_devices
-                
                 if new_devices:
                     _LOGGER.info("New devices discovered: %s", list(new_devices))
                     self.discovered_devices.update(new_devices)
-                    # Trigger device discovery callbacks
-                    for callback in self._device_discovery_callbacks:
-                        try:
-                            callback(list(new_devices))
-                        except (ValueError, TypeError, AttributeError) as e:
-                            _LOGGER.error("Error in device discovery callback: %s", e)
 
             # Add metadata to the data
             data["_mode"] = mode

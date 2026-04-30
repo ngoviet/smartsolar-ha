@@ -55,14 +55,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Store coordinator
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    # Set up platforms BEFORE first refresh so entities exist even if API is down
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Fetch initial data FIRST so sensor.py discovers per-device GUIDs from API.
+    # Use async_refresh() instead of async_config_entry_first_refresh() to avoid
+    # state check error on reload (HA 2025.x+).
+    await coordinator.async_refresh()
 
-    # Fetch initial data (non-blocking - platforms are already set up)
-    try:
-        await coordinator.async_config_entry_first_refresh()
-    except Exception:
-        _LOGGER.warning("Initial data fetch failed, will retry on next interval")
+    # Set up platforms AFTER data is available (device GUIDs now in coordinator.data)
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Create device registry entry
     device_registry = dr.async_get(hass)
