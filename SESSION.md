@@ -6,13 +6,21 @@
 
 ---
 
-## Trạng thái hiện tại (2026-04-30)
+## Trạng thái hiện tại (2026-04-30, cập nhật cuối)
 
-### Dự án đã hoàn thành — không có vấn đề tồn đọng
+### v1.2.1 — Đã fix xong, đang chạy ổn định
 
-- **Version:** v1.2.0 (đã deploy lên HA + push GitHub release)
-- **HA config entry:** Đang chạy, 11 sensors đầy đủ dữ liệu
-- **GitHub:** https://github.com/ngoviet/smartsolar-ha (đã release v1.2.0)
+- **Version:** v1.2.1 (đã deploy lên HA, commit db5211e)
+- **HA config entry:** `01K7DZBBS75AS1WBR48FVXVQZ1` — Project mode, project_id=1072, 2 thiết bị
+- **29 entities hoạt động:** 9 synthesis + 18 per-device (2 device x 9) + 1 number + 1 update
+- **GitHub:** https://github.com/ngoviet/smartsolar-ha (cần push v1.2.1)
+- **CLAUDE.md:** Đã có
+
+### Bug đã fix trong session này
+1. **Thiếu per-device sensors** — `async_forward_entry_setups` gọi trước khi có data → sensor.py không thấy device GUIDs → không tạo được sensor riêng cho từng thiết bị. Fix: dùng `async_refresh()` trước platform setup
+2. **Config entry mất field** — `mode`, `device_type`, `project_id`, `chipset_ids` biến mất khỏi config entry data → coordinator báo "Missing device_type". Fix: restore thủ công các field vào config entry
+3. **`_device_discovery_callbacks` AttributeError** — đã xóa khỏi `__slots__` nhưng code vẫn reference → crash. Fix: xóa dead code
+4. **29 entity rác** — entity registry còn entity từ các lần cài cũ. Fix: script Python clean entity_registry
 
 ---
 
