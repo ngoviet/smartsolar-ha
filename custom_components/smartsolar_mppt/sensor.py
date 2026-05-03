@@ -53,7 +53,7 @@ async def async_setup_entry(
             )
     elif mode == MODE_PROJECT:
         # Project mode: create synthesis sensors + individual device sensors
-        # Synthesis sensors (overall project data)
+        # Synthesis sensors (overall project data) — labeled "Tổng"
         for sensor_type, sensor_info in SENSOR_TYPES.items():
             entities.append(
                 SmartSolarProjectSynthesisSensor(
@@ -67,17 +67,17 @@ async def async_setup_entry(
         # Individual device sensors
         # Get device GUIDs from coordinator data (works for both Project ID and Device IDs mode)
         device_guids = []
-        
+
         # Try to get device GUIDs from coordinator data first
         if coordinator.data and "deviceLogs" in coordinator.data:
             device_guids = [str(log.get("deviceGuid")) for log in coordinator.data.get("deviceLogs", []) if log.get("deviceGuid")]
-        
+
         # Fallback to chipset_ids from config if no data available yet
         if not device_guids and chipset_ids:
             device_guids = chipset_ids
-        
-        # Create individual device sensors for each discovered device
-        for device_guid in device_guids:
+
+        # Create individual device sensors for each discovered device (labeled PV1, PV2, ...)
+        for idx, device_guid in enumerate(device_guids):
             for sensor_type, sensor_info in SENSOR_TYPES.items():
                 entities.append(
                     SmartSolarProjectDeviceSensor(
@@ -86,6 +86,7 @@ async def async_setup_entry(
                         sensor_type=sensor_type,
                         sensor_info=sensor_info,
                         device_guid=device_guid,
+                        device_index=idx + 1,  # 1-based: PV1, PV2, ...
                     )
                 )
 
@@ -108,6 +109,7 @@ class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
         sensor_type: str,
         sensor_info: dict[str, Any],
         device_guid: str | None = None,
+        device_index: int | None = None,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
@@ -143,7 +145,7 @@ class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
                     prefix = f"m_{chipset_ids[0] if chipset_ids else 'unknown'}"  # Multi-device
         else:
             prefix = "unknown"
-        
+
         self._attr_unique_id = f"{config_entry.entry_id}_{prefix}_{sensor_type}"
 
         # Debug: Log generated unique_id
@@ -154,18 +156,21 @@ class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
 
         # Set basic attributes (name without prefix)
         base_name = sensor_info["name"]
-        
-        if device_guid:
-            # Individual device sensor: add device ID to name
+
+        if device_guid and device_index:
+            # Per-device sensor in project mode: "PV1 Voltage", "PV2 Current", etc.
+            self._attr_name = f"PV{device_index} {base_name}"
+        elif device_guid:
+            # Device mode or unknown index: fallback to GUID suffix
             self._attr_name = f"{base_name} ({device_guid})"
         else:
-            # Synthesis or single device sensor: clean name
-            self._attr_name = base_name
-            
+            # Synthesis sensor: add "Tổng" for clarity
+            self._attr_name = f"Tổng {base_name}"
+
         self._attr_native_unit_of_measurement = sensor_info.get("unit")
         self._attr_icon = sensor_info["icon"]
         self._attr_device_class = sensor_info.get("device_class")
-        
+
         # Set state_class only if it's not None
         state_class = sensor_info.get("state_class")
         if state_class is not None:
@@ -319,6 +324,25 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
 class SmartSolarProjectDeviceSensor(SmartSolarSensor):
     """SmartSolar sensor for individual device in project mode."""
 
+    def __init__(
+        self,
+        coordinator: SmartSolarDataUpdateCoordinator,
+        config_entry: ConfigEntry,
+        sensor_type: str,
+        sensor_info: dict[str, Any],
+        device_guid: str,
+        device_index: int,
+    ) -> None:
+        """Initialize individual device sensor with index for friendly naming."""
+        super().__init__(
+            coordinator=coordinator,
+            config_entry=config_entry,
+            sensor_type=sensor_type,
+            sensor_info=sensor_info,
+            device_guid=device_guid,
+            device_index=device_index,
+        )
+
     @property
     def native_value(self) -> float | str | None:
         """Return the state of the sensor."""
@@ -326,10 +350,20 @@ class SmartSolarProjectDeviceSensor(SmartSolarSensor):
             return None
 
         device_logs = self.coordinator.data.get("deviceLogs", [])
+        if not device_logs:
+            _LOGGER.warning("No deviceLogs in coordinator data, keys: %s", list(self.coordinator.data.keys()))
+            return None
+
         for device_log in device_logs:
             if str(device_log.get("deviceGuid")) == str(self._device_guid):
                 return self._get_value_from_data_streams(
                     device_log.get("dataStreams", [])
                 )
+
+        _LOGGER.warning(
+            "Device GUID %s not found in deviceLogs. Available GUIDs: %s",
+            self._device_guid,
+            [str(log.get("deviceGuid")) for log in device_logs]
+        )
         return None
 
