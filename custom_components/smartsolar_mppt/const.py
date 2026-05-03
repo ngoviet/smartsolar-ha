@@ -28,27 +28,31 @@ SENSOR_TYPES = {
         "icon": "mdi:lightning-bolt",
         "device_class": "voltage",
         "state_class": "measurement",
+        "max_value": 150,  # Spec 18-100V; reject garbage above 150V
     },
     "pv_current": {
-        "name": "PV Current", 
+        "name": "PV Current",
         "unit": "A",
         "icon": "mdi:current-ac",
         "device_class": "current",
         "state_class": "measurement",
+        "max_value": 100,  # 60A max; reject garbage above 100A
     },
     "bat_voltage": {
         "name": "Battery Voltage",
-        "unit": "V", 
+        "unit": "V",
         "icon": "mdi:battery",
         "device_class": "voltage",
         "state_class": "measurement",
+        "max_value": 150,  # Spec 6-120V; reject garbage above 150V
     },
     "bat_current": {
         "name": "Battery Current",
         "unit": "A",
-        "icon": "mdi:current-ac", 
+        "icon": "mdi:current-ac",
         "device_class": "current",
         "state_class": "measurement",
+        "max_value": 100,  # 60A max; reject garbage above 100A
     },
     "charge_power": {
         "name": "Charge Power",
@@ -56,6 +60,7 @@ SENSOR_TYPES = {
         "icon": "mdi:solar-power",
         "device_class": "power",
         "state_class": "measurement",
+        "max_value": 15000,  # ~100V*60A=6000W per MPPT; 15kW safe ceiling
     },
     "today_kwh": {
         "name": "Today Energy",
@@ -63,13 +68,15 @@ SENSOR_TYPES = {
         "icon": "mdi:solar-panel",
         "device_class": "energy",
         "state_class": "total_increasing",
+        "max_value": 500,  # Daily kWh ceiling
     },
     "total_kwh": {
-        "name": "Total Energy", 
+        "name": "Total Energy",
         "unit": "kWh",
         "icon": "mdi:chart-line",
         "device_class": "energy",
         "state_class": "total_increasing",
+        "max_value": 999999,  # Lifetime kWh ceiling
     },
     "temperature": {
         "name": "Temperature",
@@ -77,6 +84,7 @@ SENSOR_TYPES = {
         "icon": "mdi:thermometer",
         "device_class": "temperature",
         "state_class": "measurement",
+        "max_value": 100,  # Electronics max temp
     },
     "status": {
         "name": "Status",
@@ -84,6 +92,7 @@ SENSOR_TYPES = {
         "icon": "mdi:information",
         "device_class": None,
         "state_class": None,
+        # No max_value — status is a string code
     },
 }
 
