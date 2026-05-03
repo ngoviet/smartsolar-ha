@@ -205,9 +205,20 @@ class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
         
         # Convert to float for numeric sensors
         try:
-            return float(value)
+            num_value = float(value)
         except (ValueError, TypeError):
             return None
+
+        # Validate against max_value to reject garbage/overflow readings
+        max_val = self._sensor_info.get("max_value")
+        if max_val is not None and num_value > max_val:
+            _LOGGER.debug(
+                "Sensor %s value %.1f exceeds max %.0f — treating as invalid",
+                self._sensor_type, num_value, max_val
+            )
+            return None
+
+        return num_value
 
 
 class SmartSolarDeviceSensor(SmartSolarSensor):
