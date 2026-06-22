@@ -4,23 +4,27 @@
 [![GitHub release](https://img.shields.io/github/release/ngoviet/smartsolar-ha.svg)](https://github.com/ngoviet/smartsolar-ha/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![HA Version](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-41BDF5)](https://www.home-assistant.io)
-[![Tests](https://img.shields.io/badge/tests-93%20passed-brightgreen)](https://github.com/ngoviet/smartsolar-ha)
+[![Tests](https://img.shields.io/badge/tests-121%20passed-brightgreen)](https://github.com/ngoviet/smartsolar-ha)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org)
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ngoviet&repository=smartsolar-ha&category=integration)
 
-Home Assistant custom integration for **SmartSolar MPPT** solar charge controllers. Monitor PV voltage, charge current, daily/total energy, temperature, and device status in real time via the SmartSolar Cloud API.
+Home Assistant custom integration for **SmartSolar MPPT** solar charge controllers. Monitor PV voltage, charge current, daily/total energy, temperature, device status, and WiFi signal quality in real time via the SmartSolar Cloud API and MQTT.
 
 ---
 
 ## Features
 
+- **MQTT real-time updates** — instant sensor data via SmartSolar MQTT broker (no polling delay)
+- **WiFi signal monitoring** — track signal quality (0–100%) for each MPPT controller
 - **Real-time monitoring** — PV voltage & current, battery voltage & current, charge power, temperature, status
 - **Daily & total energy tracking** — kWh generated today and lifetime
 - **Project mode** — aggregate multiple MPPT controllers into a single dashboard
 - **Device mode** — monitor individual controllers
 - **Adjustable polling** — configurable update interval from 1 to 30 seconds
 - **Auto token refresh** — transparently refreshes API tokens before expiry
+- **Auto MQTT credentials** — MQTT username/password discovered automatically from the API
+- **Graceful degradation** — REST API polling continues if MQTT is unavailable
 - **UI config flow** — step-by-step setup via Home Assistant's native interface
 - **Reconfigure support** — edit credentials without removing and re-adding the integration
 - **Vietnamese & English** — localized UI with translation file support
@@ -48,6 +52,7 @@ Compatible with other SmartSolar devices using the same cloud API.
 | Total Energy | kWh | Lifetime energy generated |
 | Temperature | °C | Controller temperature |
 | Status | — | Operating status (Online / Charging / Idle / Fault) |
+| WiFi Signal | % | WiFi signal quality (0–100%, MQTT only) |
 
 ## Installation
 
@@ -83,18 +88,48 @@ After setup, a **number entity** (`Update Frequency`) allows changing the pollin
 ## Architecture
 
 ```
-SmartSolar Cloud API (api.smartsolar.io.vn)
-        |
-SmartSolarAPI (auth, token refresh, metrics)
-        |
-SmartSolarDataUpdateCoordinator (polling)
-        |
-  +-----+------+
-  |             |
-Sensor (×9)   Number (update interval)
+        SmartSolar Cloud API (api.smartsolar.io.vn)
+        |                               |
+HTTP REST API              SmartSolar MQTT Broker
+(POST /Auth/Login,         (mqttx.smartsolar.io.vn:8084)
+ GET /Metric/*)                |
+        |                  SmartSolarMQTTClient
+        |                  (WebSocket Secure, WSS)
+SmartSolarAPI                  |
+(auth, token refresh,          |
+ retry w/ backoff)             |
+        |                       |
+        +-------+---------------+
+                |
+SmartSolarDataUpdateCoordinator
+(polling + real-time MQTT merge)
+                |
+      +-----+------+-----+
+      |     |      |     |
+   Sensor  Number  diag-  MQTT
+   (×10)  (update nostic  client
+           interval)
 ```
 
 ## Changelog
+
+### v1.4.0 (2026-06-22)
+
+**New Features:**
+- **MQTT real-time updates** — instant sensor data via SmartSolar MQTT broker (WebSocket Secure). No polling delay for live metrics.
+- **WiFi Signal Quality sensor** — monitor WiFi signal strength (0–100%) for each MPPT controller (available via MQTT).
+- **Auto MQTT credential discovery** — username and password retrieved automatically from the SmartSolar REST API (`GET /Device/Status`).
+- **Graceful degradation** — REST API polling continues normally if MQTT is unavailable or `aiomqtt` is not installed.
+
+**Architecture:**
+- New `mqtt_client.py` — async MQTT client with auto-reconnection, dual payload format support (dataStreams + flat dict), base64 password decoding.
+- Coordinator extended with `async_process_mqtt_data()` — merges MQTT real-time data into API responses in-place.
+- Support for two MQTT payload formats: standard `dataStreams` array and flat key-value dict (older firmware).
+
+**Code Quality:**
+- **121-unit test suite** (up from 93) covering `api.py`, `sensor.py`, `mqtt_client.py`, `number.py`, `config_flow.py`, `coordinator.py`, `const.py`
+- 18 new MQTT tests: payload parsing, field mapping, credential handling, graceful degradation
+- New `upload_to_ha.py` deployment script
 
 ### v1.3.0 (2026-06-22)
 
@@ -145,6 +180,9 @@ Sensor (×9)   Number (update interval)
 | Integration won't load | Check HA logs; verify `aiohttp` is installed |
 | API errors (502) | SmartSolar cloud may be temporarily down — retries automatically |
 | Token expired | Auto-refresh 7 days before expiry; use `smartsolar_mppt.refresh_token` service to force refresh |
+| MQTT not connecting | Check that `aiomqtt>=2.0` is installed; verify network allows WSS on port 8084 |
+| WiFi Signal shows "unknown" | Some older firmware doesn't include signalQuality field — normal degradation |
+| MQTT "connection failed" warnings | Broker temporarily unreachable — auto-reconnects in 5s; REST polling continues |
 
 ## Services
 
@@ -157,6 +195,7 @@ Sensor (×9)   Number (update interval)
 - Home Assistant **2024.1** or newer
 - Python **3.12+**
 - `aiohttp >= 3.8.0`
+- `aiomqtt >= 2.0` (optional but recommended — enables real-time MQTT updates)
 - SmartSolar account (registered at [smartsolar.io.vn](https://smartsolar.io.vn))
 
 ## Contributing
