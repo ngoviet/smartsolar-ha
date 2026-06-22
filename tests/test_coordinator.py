@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
-
-from custom_components.smartsolar_mppt.coordinator import SmartSolarDataUpdateCoordinator
-from custom_components.smartsolar_mppt.api import SmartSolarAPIError, SmartSolarConnectionError
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
+from custom_components.smartsolar_mppt.api import SmartSolarAPIError
+from custom_components.smartsolar_mppt.coordinator import SmartSolarDataUpdateCoordinator
 from tests.conftest import SAMPLE_DEVICE_RESPONSE, SAMPLE_PROJECT_RESPONSE
 
 

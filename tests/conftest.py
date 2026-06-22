@@ -26,6 +26,7 @@ SAMPLE_DEVICE_RESPONSE = {
             {"name": "today_kwh", "value": "2.5"},
             {"name": "total_kwh", "value": "1250.0"},
             {"name": "temperature", "value": "35.0"},
+            {"name": "signal_quality", "value": "95"},
             {"name": "status", "value": "1"},
         ]
     }
@@ -41,6 +42,7 @@ SAMPLE_PROJECT_RESPONSE = {
         {"name": "yield_today", "value": "7.5"},
         {"name": "yield_total", "value": "3750.0"},
         {"name": "temperature", "value": "35.0"},
+        {"name": "signal_quality", "value": "90.0"},
         {"name": "status", "value": "1.0"},
     ],
     "deviceLogs": [
@@ -55,6 +57,7 @@ SAMPLE_PROJECT_RESPONSE = {
                 {"name": "today_kwh", "value": "2.5"},
                 {"name": "total_kwh", "value": "1250.0"},
                 {"name": "temperature", "value": "35.0"},
+                {"name": "signal_quality", "value": "95"},
                 {"name": "status", "value": "1"},
             ]
         },
@@ -69,6 +72,7 @@ SAMPLE_PROJECT_RESPONSE = {
                 {"name": "today_kwh", "value": "5.0"},
                 {"name": "total_kwh", "value": "2500.0"},
                 {"name": "temperature", "value": "35.0"},
+                {"name": "signal_quality", "value": "85"},
                 {"name": "status", "value": "1"},
             ]
         }
@@ -76,6 +80,34 @@ SAMPLE_PROJECT_RESPONSE = {
     "_mode": "project",
     "_device_type": 2,
     "_chipset_ids": ["547611", "14756976"],
+}
+
+# Sample MQTT payload as received from the broker
+SAMPLE_MQTT_PAYLOAD = {
+    "pv_voltage": 50.1,
+    "pv_current": 5.8,
+    "bat_voltage": 24.5,
+    "bat_current": 11.0,
+    "charging_power": 269.5,
+    "yield_today": 3.2,
+    "yield_total": 1260.0,
+    "temperature": 36.0,
+    "signal_quality": 100,
+    "status": 1,
+}
+
+# Expected normalized data after MQTT_FIELD_MAPPING
+EXPECTED_MQTT_NORMALIZED = {
+    "pv_voltage": 50.1,
+    "pv_current": 5.8,
+    "bat_voltage": 24.5,
+    "bat_current": 11.0,
+    "charge_power": 269.5,
+    "today_kwh": 3.2,
+    "total_kwh": 1260.0,
+    "temperature": 36.0,
+    "signal_quality": 100,
+    "status": 1,
 }
 
 

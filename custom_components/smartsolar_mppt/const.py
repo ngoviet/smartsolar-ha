@@ -14,6 +14,21 @@ API_METRICS_ENDPOINT = f"{API_BASE_URL}/Metric/SynthesisMetrics"
 DEVICE_TYPE_SUN_GTIL2 = 1  # Inverter Sun-GTIL2
 DEVICE_TYPE_MANH_QUAN = 2  # S?c MPPT M?nh Qu?n
 
+# MQTT Configuration
+MQTT_BROKER = "mqttx.smartsolar.io.vn"
+MQTT_PORT = 8084
+MQTT_TOPIC_PREFIX = "manhquan/device/mppt_charger/log"
+MQTT_WS_PATH = "/mqtt"
+MQTT_RECONNECT_DELAY = 5  # seconds
+
+# MQTT → REST field name mapping (MQTT uses different names than REST API)
+MQTT_FIELD_MAPPING = {
+    "charging_power": "charge_power",
+    "yield_today": "today_kwh",
+    "yield_total": "total_kwh",
+    "signalQuality": "signal_quality",
+}
+
 # Update intervals
 DEFAULT_UPDATE_INTERVAL = timedelta(seconds=5)  # 5 seconds
 MIN_UPDATE_INTERVAL = 1  # 1 second
@@ -87,6 +102,14 @@ SENSOR_TYPES = {
         "device_class": "temperature",
         "state_class": "measurement",
         "max_value": 100,  # Electronics max temp
+    },
+    "signal_quality": {
+        "name": "WiFi Signal",
+        "unit": "%",
+        "icon": "mdi:wifi",
+        "device_class": None,
+        "state_class": "measurement",
+        "max_value": 100,  # 0-100% range
     },
     "status": {
         "name": "Status",

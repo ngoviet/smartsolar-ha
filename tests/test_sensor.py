@@ -4,15 +4,13 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
+from custom_components.smartsolar_mppt.const import SENSOR_TYPES
 from custom_components.smartsolar_mppt.sensor import (
-    SmartSolarSensor,
     SmartSolarDeviceSensor,
-    SmartSolarProjectSynthesisSensor,
     SmartSolarProjectDeviceSensor,
+    SmartSolarProjectSynthesisSensor,
+    SmartSolarSensor,
 )
-from custom_components.smartsolar_mppt.const import SENSOR_TYPES, STATUS_MAPPING
 from tests.conftest import SAMPLE_DEVICE_RESPONSE, SAMPLE_PROJECT_RESPONSE
 
 
@@ -285,3 +283,150 @@ class TestValueExtraction:
             device_index=3,
         )
         assert sensor.native_value is None
+
+
+class TestSignalQualitySensor:
+    """Tests for WiFi signal quality sensor."""
+
+    def test_signal_quality_in_sensor_types(self):
+        """signal_quality is defined in SENSOR_TYPES."""
+        assert "signal_quality" in SENSOR_TYPES
+        info = SENSOR_TYPES["signal_quality"]
+        assert info["name"] == "WiFi Signal"
+        assert info["unit"] == "%"
+        assert info["icon"] == "mdi:wifi"
+        assert info["max_value"] == 100
+
+    def test_device_sensor_returns_signal_quality(self, mock_coordinator, mock_config_entry):
+        """Device sensor extracts signal_quality from data streams."""
+        mock_coordinator.data = {
+            "lastMessage": {
+                "dataStreams": [
+                    {"name": "signal_quality", "value": "95"},
+                ]
+            }
+        }
+        from tests.conftest import SAMPLE_DEVICE_RESPONSE
+        sensor = SmartSolarDeviceSensor(
+            coordinator=mock_coordinator,
+            config_entry=mock_config_entry,
+            sensor_type="signal_quality",
+            sensor_info=SENSOR_TYPES["signal_quality"],
+        )
+        # Need full data for the sensor to work properly
+        mock_coordinator.data = SAMPLE_DEVICE_RESPONSE
+        assert sensor.native_value == 95.0
+
+    def test_signal_quality_rejects_out_of_range(self):
+        """Signal quality > 100 is rejected."""
+        coordinator = MagicMock()
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+        config_entry.data = {"mode": "device", "chipset_ids": ["123"]}
+        sensor = SmartSolarDeviceSensor(
+            coordinator=coordinator,
+            config_entry=config_entry,
+            sensor_type="signal_quality",
+            sensor_info=SENSOR_TYPES["signal_quality"],
+        )
+        streams = [{"name": "signal_quality", "value": "999"}]
+        result = sensor._get_value_from_data_streams(streams)
+        assert result is None
+
+    def test_project_device_sensor_signal_quality(self, mock_coordinator, mock_config_entry):
+        """Project device sensor extracts signal_quality for a specific device."""
+        sensor = SmartSolarProjectDeviceSensor(
+            coordinator=mock_coordinator,
+            config_entry=mock_config_entry,
+            sensor_type="signal_quality",
+            sensor_info=SENSOR_TYPES["signal_quality"],
+            device_guid="547611",
+            device_index=1,
+        )
+        assert sensor.native_value == 95.0
+
+    def test_project_device_sensor_signal_quality_second_device(self, mock_coordinator, mock_config_entry):
+        """Second device returns its own signal_quality."""
+        sensor = SmartSolarProjectDeviceSensor(
+            coordinator=mock_coordinator,
+            config_entry=mock_config_entry,
+            sensor_type="signal_quality",
+            sensor_info=SENSOR_TYPES["signal_quality"],
+            device_guid="14756976",
+            device_index=2,
+        )
+        assert sensor.native_value == 85.0
+
+
+class TestMQTTDataMerging:
+    """Tests for MQTT data merging in coordinator."""
+
+    def test_mqtt_to_data_stream_converts_flat_dict(self, mock_coordinator):
+        """_mqtt_to_data_stream converts flat dict to dataStreams format."""
+        flat = {"pv_voltage": 50.1, "charge_power": 269.5}
+        streams = mock_coordinator._mqtt_to_data_stream(flat)
+        assert len(streams) == 2
+        name_value = {s["name"]: s["value"] for s in streams}
+        assert name_value["pv_voltage"] == "50.1"
+        assert name_value["charge_power"] == "269.5"
+
+    def test_merge_streams_overwrites_existing(self, mock_coordinator):
+        """_merge_streams overwrites existing fields with incoming values."""
+        existing = [
+            {"name": "pv_voltage", "value": "48.5"},
+            {"name": "charge_power", "value": "248.5"},
+        ]
+        incoming = [
+            {"name": "pv_voltage", "value": "50.1"},
+            {"name": "signal_quality", "value": "100"},
+        ]
+        merged = mock_coordinator._merge_streams(existing, incoming)
+        merged_dict = {s["name"]: s["value"] for s in merged}
+        assert merged_dict["pv_voltage"] == "50.1"  # overwritten
+        assert merged_dict["charge_power"] == "248.5"  # preserved
+        assert merged_dict["signal_quality"] == "100"  # new
+
+    def test_merge_mqtt_into_device_mode(self, mock_coordinator, mock_config_entry):
+        """_merge_mqtt_into_data updates lastMessage for device mode."""
+        api_data = {
+            "_mode": "device",
+            "lastMessage": {
+                "dataStreams": [
+                    {"name": "pv_voltage", "value": "48.5"},
+                ]
+            }
+        }
+        mqtt_data = {"pv_voltage": 50.1, "signal_quality": 100}
+        mock_coordinator._merge_mqtt_into_data(api_data, "547611", mqtt_data)
+        streams = api_data["lastMessage"]["dataStreams"]
+        stream_dict = {s["name"]: s["value"] for s in streams}
+        assert stream_dict["pv_voltage"] == "50.1"
+        assert stream_dict["signal_quality"] == "100"
+
+    def test_merge_mqtt_into_project_mode(self, mock_coordinator, mock_config_entry):
+        """_merge_mqtt_into_data updates deviceLogs for project mode."""
+        from tests.conftest import SAMPLE_PROJECT_RESPONSE
+        api_data = SAMPLE_PROJECT_RESPONSE.copy()
+        mqtt_data = {"pv_voltage": 52.0, "signal_quality": 100}
+        mock_coordinator._merge_mqtt_into_data(api_data, "547611", mqtt_data)
+        # Find device 547611 and check updated values
+        for device_log in api_data["deviceLogs"]:
+            if device_log["deviceGuid"] == "547611":
+                streams = {s["name"]: s["value"] for s in device_log["dataStreams"]}
+                assert streams["pv_voltage"] == "52.0"
+                assert streams["signal_quality"] == "100"
+                return
+        raise AssertionError("Device 547611 not found")
+
+    def test_merge_mqtt_new_device_adds_entry(self, mock_coordinator, mock_config_entry):
+        """_merge_mqtt_into_data adds deviceLog entry for unknown device GUID."""
+        api_data = {
+            "_mode": "project",
+            "deviceLogs": [],
+        }
+        mqtt_data = {"pv_voltage": 48.5, "signal_quality": 70}
+        mock_coordinator._merge_mqtt_into_data(api_data, "new_device_999", mqtt_data)
+        assert len(api_data["deviceLogs"]) == 1
+        assert api_data["deviceLogs"][0]["deviceGuid"] == "new_device_999"
+        streams = {s["name"]: s["value"] for s in api_data["deviceLogs"][0]["dataStreams"]}
+        assert streams["signal_quality"] == "70"

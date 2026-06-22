@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 import aiohttp
+import pytest
 
 from custom_components.smartsolar_mppt.api import (
     SmartSolarAPI,
@@ -64,7 +64,7 @@ class TestSmartSolarAPI:
         """token_expiry property returns current expiry."""
         api = SmartSolarAPI("user", "pass", MagicMock())
         assert api.token_expiry is None
-        dt = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        dt = datetime(2026, 1, 1, tzinfo=UTC)
         api._token_expiry = dt
         assert api.token_expiry == dt
 
@@ -99,7 +99,7 @@ class TestSmartSolarAPI:
         """refresh_token_if_needed does nothing when token is valid."""
         api = SmartSolarAPI("user", "pass", MagicMock())
         api._token = "valid-token"
-        api._token_expiry = datetime.now(timezone.utc) + timedelta(days=30)
+        api._token_expiry = datetime.now(UTC) + timedelta(days=30)
         api.login = AsyncMock()
         await api.refresh_token_if_needed()
         api.login.assert_not_called()
@@ -109,7 +109,7 @@ class TestSmartSolarAPI:
         """refresh_token_if_needed calls login when token expires within 7 days."""
         api = SmartSolarAPI("user", "pass", MagicMock())
         api._token = "valid-token"
-        api._token_expiry = datetime.now(timezone.utc) + timedelta(days=3)
+        api._token_expiry = datetime.now(UTC) + timedelta(days=3)
         api.login = AsyncMock()
         await api.refresh_token_if_needed()
         api.login.assert_called_once()

@@ -105,6 +105,9 @@
       "temperature": {
         "name": "Temperature"
       },
+      "signal_quality": {
+        "name": "WiFi Signal"
+      },
       "status": {
         "name": "Status"
       }

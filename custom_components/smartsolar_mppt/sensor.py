@@ -134,16 +134,10 @@ class SmartSolarSensor(CoordinatorEntity, RestoreEntity, SensorEntity):  # type:
         elif mode == MODE_PROJECT:
             if device_guid:
                 # Individual device in project mode
-                if project_id:
-                    prefix = f"pd_{device_guid}"  # Project with ID
-                else:
-                    prefix = f"md_{device_guid}"  # Multi-device
+                prefix = f"pd_{device_guid}" if project_id else f"md_{device_guid}"
             else:
                 # Synthesis sensor in project mode
-                if project_id:
-                    prefix = f"p_{project_id}"  # Project with ID
-                else:
-                    prefix = f"m_{chipset_ids[0] if chipset_ids else 'unknown'}"  # Multi-device
+                prefix = f"p_{project_id}" if project_id else f"m_{chipset_ids[0] if chipset_ids else 'unknown'}"
         else:
             prefix = "unknown"
 
@@ -191,19 +185,19 @@ class SmartSolarSensor(CoordinatorEntity, RestoreEntity, SensorEntity):  # type:
 
         # Use dict for O(1) lookup instead of list iteration
         stream_dict = {s["name"]: s["value"] for s in data_streams if s.get("name") is not None and s.get("value") is not None}
-        
+
         value = stream_dict.get(self._sensor_type)
-        
+
         if value is None:
             return None
-        
+
         # Handle status mapping
         if self._sensor_type == "status":
             try:
                 return STATUS_MAPPING.get(int(value), f"Unknown ({value})")
             except (ValueError, TypeError):
                 return f"Unknown ({value})"
-        
+
         # Convert to float for numeric sensors
         try:
             num_value = float(value)
@@ -231,14 +225,14 @@ class SmartSolarDeviceSensor(SmartSolarSensor):
         if not self.coordinator.data:
             _LOGGER.debug("No coordinator data available")
             return None
-        
+
 
         # For device mode, data is in lastMessage.dataStreams
         last_message = self.coordinator.data.get("lastMessage", {})
         data_streams = last_message.get("dataStreams", [])
-        
+
         # Debug info removed for production
-        
+
         return self._get_value_from_data_streams(data_streams)
 
 
@@ -272,22 +266,22 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
                     return None
 
         return self._calculate_from_device_logs()
-    
+
     def _calculate_from_device_logs(self) -> float | str | None:
         """Calculate synthesis value from individual device logs."""
         device_logs = self.coordinator.data.get("deviceLogs", [])
         if not device_logs:
             _LOGGER.debug("Synthesis sensor %s - No deviceLogs available for calculation", self._sensor_type)
             return None
-        
+
         # For status, calculate average from deviceLogs since it's not in synthesisStreams
         if self._sensor_type == "status":
             total_status = 0.0
             count = 0
-            
+
             for device_log in device_logs:
                 data_streams = device_log.get("dataStreams", [])
-                
+
                 # For status calculation, we need the raw numeric value, not the mapped string
                 # Find the raw status value from data streams
                 raw_status = None
@@ -298,34 +292,34 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
                             break
                         except (ValueError, TypeError):
                             raw_status = 0
-                
+
                 if raw_status is not None:
                     total_status += raw_status
                     count += 1
-            
+
             if count == 0:
                 return None
-            
+
             # Return average status
             avg_status = total_status / count
             # Map status number to text
             return STATUS_MAPPING.get(int(avg_status), f"Unknown ({avg_status})")
-        
+
         # For other sensors, calculate sum from individual devices
         total_value = 0.0
         count = 0
-        
+
         for device_log in device_logs:
             data_streams = device_log.get("dataStreams", [])
             device_value = self._get_value_from_data_streams(data_streams)
-            
+
             if device_value is not None and isinstance(device_value, (int, float)):
                 total_value += device_value
                 count += 1
-        
+
         if count == 0:
             return None
-        
+
         # Return sum for most sensors, average for status
         if self._sensor_type == "status":
             return total_value / count

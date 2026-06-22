@@ -6,10 +6,9 @@ import logging
 from typing import Any
 
 import aiohttp
-
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
 
@@ -210,12 +209,12 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     finally:
                         await api.close()
                         self._api = None  # Reset cached API after use
-                    
+
                     # Success - save configuration
                     self._project_id = project_id
                     self._device_type = DEVICE_TYPE_MANH_QUAN  # Default for project mode
                     return await self._create_entry()
-                    
+
                 except SmartSolarAPIError as err:
                     if err.status_code == 404:
                         errors["base"] = "project_not_found"
@@ -243,7 +242,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Initialize variables
             all_devices: list[str] = []
             device_types: list[int] = []
-            
+
             # Validate input
             if not manh_quan_ids:
                 errors["base"] = "manh_quan_ids_required"
@@ -251,7 +250,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # Parse device IDs and auto-calculate count
                 manh_ids = [str(id.strip()) for id in manh_quan_ids.split(",") if id.strip()]
                 manh_quan_count = len(manh_ids)  # Auto-calculate count
-                
+
                 if manh_quan_count == 0:
                     errors["base"] = "manh_quan_ids_required"
                 else:
@@ -262,7 +261,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not errors and all_devices and device_types:
                 self._chipset_ids = all_devices
                 self._device_types = device_types
-                
+
                 # Test the configuration
                 try:
                     if self._username is None or self._password is None or self._mode is None:
@@ -275,13 +274,13 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         chipset_ids=[all_devices[0]],
                         mode=self._mode,
                     )
-                    
+
                     # Create unique ID for this configuration
                     unique_id = f"{self._username}_{self._mode}_{'_'.join(all_devices)}"
-                    
+
                     await self.async_set_unique_id(unique_id)
                     self._abort_if_unique_id_configured()
-                    
+
                     return self.async_create_entry(
                         title=f"SmartSolar MPPT ({self._mode.title()})",
                         data={
@@ -293,7 +292,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             "device_types": self._device_types,  # All device types
                         },
                     )
-                    
+
                 except SmartSolarAPIError as err:
                     if err.status_code == 404:
                         errors["base"] = "device_not_found"
@@ -318,18 +317,18 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             chipset_ids_str = user_input[CONF_CHIPSET_IDS].strip()
-            
+
             if not chipset_ids_str:
                 errors["base"] = "chipset_ids_required"
             else:
                 # Parse chipset IDs (comma-separated)
                 chipset_ids = [id.strip() for id in chipset_ids_str.split(",") if id.strip()]
-                
+
                 if not chipset_ids:
                     errors["base"] = "chipset_ids_invalid"
                 else:
                     self._chipset_ids = chipset_ids
-                    
+
                     # Test the configuration
                     try:
                         if self._username is None or self._password is None or self._device_type is None or self._mode is None:
@@ -342,13 +341,13 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             chipset_ids=chipset_ids,
                             mode=self._mode,
                         )
-                        
+
                         # Create unique ID for this configuration
                         unique_id = f"{self._username}_{self._mode}_{self._device_type}_{'_'.join(chipset_ids)}"
-                        
+
                         await self.async_set_unique_id(unique_id)
                         self._abort_if_unique_id_configured()
-                        
+
                         return self.async_create_entry(
                             title=f"SmartSolar MPPT ({self._mode.title()})",
                             data={
@@ -359,7 +358,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 CONF_CHIPSET_IDS: self._chipset_ids,
                             },
                         )
-                        
+
                     except SmartSolarAPIError as err:
                         if err.status_code == 404:
                             errors["base"] = "device_not_found"
@@ -453,10 +452,10 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if self._chipset_ids is None:
                 raise ValueError("Missing chipset_ids")
             unique_id = f"{self._username}_{self._mode}_{self._device_type}_{'_'.join(self._chipset_ids)}"
-        
+
         await self.async_set_unique_id(unique_id)
         self._abort_if_unique_id_configured()
-        
+
         # Prepare data
         data = {
             CONF_USERNAME: self._username,
@@ -464,12 +463,12 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_MODE: self._mode,
             CONF_DEVICE_TYPE: self._device_type,
         }
-        
+
         if self._project_id:
             data[CONF_PROJECT_ID] = self._project_id
         else:
             data[CONF_CHIPSET_IDS] = self._chipset_ids
-        
+
         return self.async_create_entry(
             title=f"SmartSolar MPPT ({self._mode.title()})",
             data=data,
