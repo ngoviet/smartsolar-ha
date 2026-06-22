@@ -79,7 +79,7 @@ class SmartSolarAPI:
     async def login(self) -> dict[str, Any]:
         """Login to SmartSolar API and get token."""
         session = await self._get_session()
-        
+
         login_data = {
             "username": self._username,
             "password": self._password,
@@ -94,7 +94,7 @@ class SmartSolarAPI:
                 if response.status == 200:
                     data = await response.json()
                     self._token = data.get("token")
-                    
+
                     # Parse token expiry safely
                     expiration_str = data.get("expiration", "")
                     if expiration_str:
@@ -109,24 +109,24 @@ class SmartSolarAPI:
                     else:
                         # Default to 30 days if no expiry provided
                         self._token_expiry = dt_util.utcnow() + timedelta(days=30)
-                    
+
                     _LOGGER.debug("Successfully logged in to SmartSolar API")
                     return data
                 else:
                     error_text = await response.text()
                     _LOGGER.error(
-                        "Login failed with status %s: %s", 
-                        response.status, 
+                        "Login failed with status %s: %s",
+                        response.status,
                         error_text
                     )
                     if response.status == 401:
                         raise SmartSolarAuthenticationError(
-                            f"Invalid credentials: {error_text}", 
+                            f"Invalid credentials: {error_text}",
                             response.status
                         )
                     else:
                         raise SmartSolarAPIError(
-                            f"Login failed: {error_text}", 
+                            f"Login failed: {error_text}",
                             response.status
                         )
         except aiohttp.ClientError as err:
@@ -158,7 +158,7 @@ class SmartSolarAPI:
                 last_exception = SmartSolarAPIError(
                     f"Server error {response.status}", response.status
                 )
-            except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            except (TimeoutError, aiohttp.ClientError) as err:
                 last_exception = err
 
             if attempt < RETRY_MAX_ATTEMPTS - 1:
@@ -186,7 +186,7 @@ class SmartSolarAPI:
         refresh_threshold = dt_util.utcnow() + timedelta(
             days=TOKEN_REFRESH_DAYS_BEFORE_EXPIRY
         )
-        
+
         if self._token_expiry <= refresh_threshold:
             _LOGGER.info("Token expires soon, refreshing...")
             await self.login()
@@ -201,7 +201,7 @@ class SmartSolarAPI:
             raise SmartSolarAPIError("No valid token available")
 
         session = await self._get_session()
-        
+
         headers = {
             "Authorization": f"Bearer {self._token}",
             "Content-Type": "application/json",
@@ -215,31 +215,31 @@ class SmartSolarAPI:
             async with session.get(url, headers=headers, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    
+
                     # Normalize deviceGuid to string for consistent matching
                     if "deviceLogs" in data:
                         for device_log in data["deviceLogs"]:
                             if "deviceGuid" in device_log:
                                 device_log["deviceGuid"] = str(device_log["deviceGuid"])
-                    
+
                     _LOGGER.debug("Successfully fetched project metrics from SmartSolar API")
                     return data
                 elif response.status == 404:
                     error_text = await response.text()
                     _LOGGER.error("Project not found (404): %s", error_text)
                     raise SmartSolarNotFoundError(
-                        "Project not found. Please check your Project ID.", 
+                        "Project not found. Please check your Project ID.",
                         404
                     )
                 else:
                     error_text = await response.text()
                     _LOGGER.error(
-                        "Get project metrics failed with status %s: %s", 
-                        response.status, 
+                        "Get project metrics failed with status %s: %s",
+                        response.status,
                         error_text
                     )
                     raise SmartSolarAPIError(
-                        f"Get project metrics failed: {error_text}", 
+                        f"Get project metrics failed: {error_text}",
                         response.status
                     )
         except aiohttp.ClientError as err:
@@ -247,8 +247,8 @@ class SmartSolarAPI:
             raise SmartSolarConnectionError(f"Get project metrics request failed: {err}") from err
 
     async def get_metrics(
-        self, 
-        device_type: int, 
+        self,
+        device_type: int,
         chipset_ids: list[str],
         mode: str = "device"
     ) -> dict[str, Any]:
@@ -259,7 +259,7 @@ class SmartSolarAPI:
             raise SmartSolarAPIError("No valid token available")
 
         session = await self._get_session()
-        
+
         headers = {
             "Authorization": f"Bearer {self._token}",
             "Content-Type": "application/json",
@@ -297,36 +297,78 @@ class SmartSolarAPI:
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
-                        
+
                         # Normalize deviceGuid to string for consistent matching
                         if "deviceLogs" in data:
                             for device_log in data["deviceLogs"]:
                                 if "deviceGuid" in device_log:
                                     device_log["deviceGuid"] = str(device_log["deviceGuid"])
-                        
+
                         _LOGGER.debug("Successfully fetched metrics from SmartSolar API")
                         return data
                     elif response.status == 404:
                         error_text = await response.text()
                         _LOGGER.error("Device not found (404): %s", error_text)
                         raise SmartSolarAPIError(
-                            "Device not found. Please check your ChipsetId(s).", 
+                            "Device not found. Please check your ChipsetId(s).",
                             404
                         )
                     else:
                         error_text = await response.text()
                         _LOGGER.error(
-                            "Get metrics failed with status %s: %s", 
-                            response.status, 
+                            "Get metrics failed with status %s: %s",
+                            response.status,
                             error_text
                         )
                         raise SmartSolarAPIError(
-                            f"Get metrics failed: {error_text}", 
+                            f"Get metrics failed: {error_text}",
                             response.status
                         )
         except aiohttp.ClientError as err:
             _LOGGER.error("Get metrics request failed: %s", err)
             raise SmartSolarAPIError(f"Get metrics request failed: {err}") from err
+
+    async def get_device_status(self, device_guid: str) -> dict[str, Any]:
+        """Get device status including MQTT connection credentials.
+
+        Calls GET /Device/Status?deviceGuid={guid} and returns the full
+        response, which includes the ``mqttConnection`` object containing
+        MQTT broker, username, password (base64), and topic.
+        """
+        await self.refresh_token_if_needed()
+
+        if not self._token:
+            raise SmartSolarAPIError("No valid token available")
+
+        session = await self._get_session()
+
+        headers = {
+            "Authorization": f"Bearer {self._token}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            url = f"{API_BASE_URL}/Device/Status"
+            params = {"deviceGuid": device_guid}
+            async with session.get(url, headers=headers, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    _LOGGER.debug(
+                        "Device status for %s: online=%s, has_mqtt=%s",
+                        device_guid, data.get("isOnline"),
+                        "mqttConnection" in data,
+                    )
+                    return data
+                else:
+                    error_text = await response.text()
+                    raise SmartSolarAPIError(
+                        f"Device status failed: {error_text}",
+                        response.status,
+                    )
+        except aiohttp.ClientError as err:
+            raise SmartSolarConnectionError(
+                f"Device status request failed: {err}"
+            ) from err
 
     async def test_connection(self) -> bool:
         """Test API connection by attempting login."""

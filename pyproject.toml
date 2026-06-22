@@ -2,9 +2,12 @@
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+include = ["custom_components*"]
+
 [project]
 name = "smartsolar-mppt"
-version = "1.2.2"
+version = "1.4.0"
 description = "Home Assistant custom integration for SmartSolar MPPT solar charge controllers"
 readme = "README.md"
 license = {text = "MIT"}
@@ -14,6 +17,7 @@ authors = [
 requires-python = ">=3.11"
 dependencies = [
     "aiohttp>=3.8.0",
+    "aiomqtt>=2.0",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",

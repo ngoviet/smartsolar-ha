@@ -3,28 +3,29 @@
 from __future__ import annotations
 
 from custom_components.smartsolar_mppt.const import (
-    DOMAIN,
-    SENSOR_TYPES,
-    STATUS_MAPPING,
-    get_sensor_info,
-    build_device_info,
     API_BASE_URL,
+    DEFAULT_UPDATE_INTERVAL,
+    DOMAIN,
+    MAX_UPDATE_INTERVAL,
+    MIN_UPDATE_INTERVAL,
     MODE_DEVICE,
     MODE_PROJECT,
-    DEFAULT_UPDATE_INTERVAL,
-    MIN_UPDATE_INTERVAL,
-    MAX_UPDATE_INTERVAL,
+    SENSOR_TYPES,
+    STATUS_MAPPING,
+    build_device_info,
+    get_sensor_info,
 )
 
 
 class TestSensorTypes:
     """Tests for SENSOR_TYPES dict."""
 
-    def test_all_nine_sensor_types_exist(self):
-        """Verify all 9 sensor types are defined."""
+    def test_all_ten_sensor_types_exist(self):
+        """Verify all 10 sensor types are defined."""
         expected = {
             "pv_voltage", "pv_current", "bat_voltage", "bat_current",
-            "charge_power", "today_kwh", "total_kwh", "temperature", "status",
+            "charge_power", "today_kwh", "total_kwh", "temperature",
+            "signal_quality", "status",
         }
         assert set(SENSOR_TYPES.keys()) == expected
 

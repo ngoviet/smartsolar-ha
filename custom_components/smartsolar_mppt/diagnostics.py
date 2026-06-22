@@ -39,6 +39,13 @@ async def async_get_config_entry_diagnostics(
             if coordinator.api.token_expiry
             else None,
         },
+        "mqtt": {
+            "enabled": coordinator._mqtt_client is not None,
+            "connected": coordinator._mqtt_client.connected
+            if coordinator._mqtt_client
+            else False,
+            "cached_devices": len(coordinator._mqtt_data),
+        },
     }
 
     if coordinator.data:

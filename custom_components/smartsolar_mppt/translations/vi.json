@@ -105,6 +105,9 @@
       "temperature": {
         "name": "Nhiệt độ"
       },
+      "signal_quality": {
+        "name": "Tín hiệu WiFi"
+      },
       "status": {
         "name": "Trạng thái"
       }

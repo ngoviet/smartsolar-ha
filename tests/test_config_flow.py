@@ -2,16 +2,11 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
+# Mock the config_entries module before importing
+from unittest.mock import MagicMock
 
 from custom_components.smartsolar_mppt.config_flow import SmartSolarConfigFlow
-from custom_components.smartsolar_mppt.const import DOMAIN
 
-# Mock the config_entries module before importing
-import sys
-from unittest.mock import MagicMock as Mock
 
 # Create a mock ConfigFlow and ConfigFlowResult
 class MockConfigFlow:

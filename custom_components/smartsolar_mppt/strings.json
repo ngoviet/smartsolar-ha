@@ -86,6 +86,7 @@
       "today_kwh": { "name": "Energy Today" },
       "total_kwh": { "name": "Total Energy" },
       "temperature": { "name": "Temperature" },
+      "signal_quality": { "name": "WiFi Signal" },
       "status": { "name": "Status" }
     }
   }
