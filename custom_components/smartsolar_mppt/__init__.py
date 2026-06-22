@@ -29,6 +29,31 @@ async def async_setup(hass: HomeAssistant, _: dict[str, Any]) -> bool:
     return True
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate old config entry to new version."""
+    _LOGGER.debug(
+        "Migrating config entry from version %s.%s",
+        entry.version, entry.minor_version,
+    )
+
+    if entry.version == 1 and entry.minor_version == 1:
+        # v1 → v1.2: ensure chipset_ids are strings, add missing keys
+        new_data = {**entry.data}
+        if "chipset_ids" in new_data:
+            new_data["chipset_ids"] = [str(cid) for cid in new_data["chipset_ids"]]
+        if "update_interval" not in new_data:
+            new_data["update_interval"] = 5
+
+        hass.config_entries.async_update_entry(
+            entry,
+            data=new_data,
+            minor_version=2,
+        )
+        _LOGGER.info("Migration to v1.2 complete")
+
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up SmartSolar MPPT from a config entry."""
     hass.data.setdefault(DOMAIN, {})
@@ -78,7 +103,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """Service to manually refresh API token."""
         coordinator = hass.data[DOMAIN].get(service.data.get("entry_id"))
         if coordinator:
-            await coordinator.api.refresh_token()
+            await coordinator.api.refresh_token_if_needed()
             await coordinator.async_request_refresh()
 
     hass.services.async_register(

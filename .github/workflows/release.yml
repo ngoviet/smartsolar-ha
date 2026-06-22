@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate manifest version matches tag
+        run: |
+          TAG=${GITHUB_REF#refs/tags/v}
+          MANIFEST_VER=$(python -c "import json; print(json.load(open('custom_components/smartsolar_mppt/manifest.json'))['version'])")
+          if [ "$TAG" != "$MANIFEST_VER" ]; then
+            echo "Tag version v$TAG does not match manifest version $MANIFEST_VER"
+            exit 1
+          fi
+          echo "Version $TAG validated"
+
+      - name: Generate changelog
+        id: changelog
+        uses: mikepenz/release-changelog-builder-action@v4
+        with:
+          configuration: |
+            {
+              "categories": [
+                {"title": "## 🐛 Bug Fixes", "labels": ["bug", "fix"]},
+                {"title": "## ✨ Features", "labels": ["feature", "enhancement"]},
+                {"title": "## 🧪 Testing & CI", "labels": ["test", "ci"]},
+                {"title": "## 📚 Documentation", "labels": ["docs", "documentation"]},
+                {"title": "## 🔧 Maintenance", "labels": []}
+              ],
+              "template": "${{CHANGELOG}}"
+            }
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: v${{ steps.version.outputs.version }}
+          body: ${{ steps.changelog.outputs.changelog }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

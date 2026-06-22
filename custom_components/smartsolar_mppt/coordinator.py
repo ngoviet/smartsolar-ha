@@ -77,7 +77,12 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     mode=mode,
                 )
 
-            _LOGGER.debug("API response data: %s", data)
+            # Log summary only — avoid logging full response with potentially sensitive data
+            _LOGGER.debug(
+                "API response: mode=%s, keys=%s, device_count=%s",
+                data.get("_mode"), list(data.keys()),
+                len(data.get("deviceLogs", [])),
+            )
             
             # Track discovered devices for project mode
             if mode == "project" and "deviceLogs" in data:
