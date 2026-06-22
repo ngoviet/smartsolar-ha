@@ -1,0 +1,8 @@
+{
+    "name": "SmartSolar MPPT",
+    "content_in_root": false,
+    "country": "VN",
+    "homeassistant": "2024.1.0",
+    "render_readme": true,
+    "zip_release": false
+}

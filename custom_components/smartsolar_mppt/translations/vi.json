@@ -23,27 +23,27 @@
           "chipset_ids": "ChipsetId"
         }
       },
-            "project_method": {
-              "title": "Chọn phương thức tích hợp Project",
-              "description": "Chọn cách tích hợp Project:\n\n• **Theo Project ID (khuyến nghị):**\n  - Đơn giản, chỉ cần 1 ID duy nhất\n  - Tự động lấy tất cả thiết bị trong project\n  \n• **Theo danh sách Device IDs:**\n  - Nhập từng Chipset ID của thiết bị\n  - Phù hợp khi muốn chọn thiết bị cụ thể",
-              "data": {
-                "project_method": "Phương thức"
-              }
-            },
-            "project_id": {
-              "title": "Nhập Project ID",
-              "description": "Nhập Project ID từ trang quản lý SmartSolar\n\n**Hướng dẫn lấy Project ID:**\n\nBước 1: Đăng nhập vào SmartSolar\n  → Truy cập: https://smartsolar.io.vn\n\nBước 2: Vào trang quản lý Project\n  → Click menu \"Dự án\" hoặc truy cập: https://smartsolar.io.vn/Project\n\nBước 3: Tạo Project mới (nếu chưa có)\n  → Click nút \"Thêm mới\"\n  → Nhập tên Project (ví dụ: \"Home\")\n  → Thêm các thiết bị vào Project\n  → Lưu lại\n\nBước 4: Xem Project để lấy ID\n  → Click vào tên Project trong danh sách\n  → Xem URL trên thanh địa chỉ trình duyệt:\n     https://smartsolar.io.vn/Monitor/Project?projectId=1072\n  → Lấy số sau \"projectId=\" → đó là Project ID\n\n**Ví dụ cụ thể:**\n- URL: smartsolar.io.vn/Monitor/Project?projectId=1072\n  → Nhập: 1072\n\n- URL: smartsolar.io.vn/Monitor/Project?projectId=2048\n  → Nhập: 2048\n\n**Lưu ý:**\n- Project phải chứa ít nhất 1 thiết bị\n- Chỉ nhập con số, không nhập URL đầy đủ",
-              "data": {
-                "project_id": "Project ID"
-              }
-            },
-            "project_devices": {
-              "title": "Cấu hình thiết bị dự án",
-              "description": "Nhập danh sách ID thiết bị SmartSolar MPPT Mạnh Quân\n\n**Hướng dẫn:**\n- Nhập các Chipset ID, cách nhau bằng dấu phẩy (,)\n- Không giới hạn số lượng thiết bị\n\n**Ví dụ:**\n- 1 thiết bị: `547611`\n- 2 thiết bị: `547611,14756976`\n- 3 thiết bị: `547611,14756976,123456`",
-              "data": {
-                "manh_quan_ids": "Danh sách Chipset ID (cách nhau bằng dấu phẩy)"
-              }
-            }
+      "project_method": {
+        "title": "Chọn phương thức tích hợp Project",
+        "description": "Chọn cách tích hợp Project:\n\n• **Theo Project ID (khuyến nghị):**\n  - Đơn giản, chỉ cần 1 ID duy nhất\n  - Tự động lấy tất cả thiết bị trong project\n  \n• **Theo danh sách Device IDs:**\n  - Nhập từng Chipset ID của thiết bị\n  - Phù hợp khi muốn chọn thiết bị cụ thể",
+        "data": {
+          "project_method": "Phương thức"
+        }
+      },
+      "project_id": {
+        "title": "Nhập Project ID",
+        "description": "Nhập Project ID từ trang quản lý SmartSolar\n\n**Hướng dẫn lấy Project ID:**\n\nBước 1: Đăng nhập vào SmartSolar\n  → Truy cập: https://smartsolar.io.vn\n\nBước 2: Vào trang quản lý Project\n  → Click menu \"Dự án\" hoặc truy cập: https://smartsolar.io.vn/Project\n\nBước 3: Tạo Project mới (nếu chưa có)\n  → Click nút \"Thêm mới\"\n  → Nhập tên Project (ví dụ: \"Home\")\n  → Thêm các thiết bị vào Project\n  → Lưu lại\n\nBước 4: Xem Project để lấy ID\n  → Click vào tên Project trong danh sách\n  → Xem URL trên thanh địa chỉ trình duyệt:\n     https://smartsolar.io.vn/Monitor/Project?projectId=1072\n  → Lấy số sau \"projectId=\" → đó là Project ID\n\n**Ví dụ cụ thể:**\n- URL: smartsolar.io.vn/Monitor/Project?projectId=1072\n  → Nhập: 1072\n\n- URL: smartsolar.io.vn/Monitor/Project?projectId=2048\n  → Nhập: 2048\n\n**Lưu ý:**\n- Project phải chứa ít nhất 1 thiết bị\n- Chỉ nhập con số, không nhập URL đầy đủ",
+        "data": {
+          "project_id": "Project ID"
+        }
+      },
+      "project_devices": {
+        "title": "Cấu hình thiết bị dự án",
+        "description": "Nhập danh sách ID thiết bị SmartSolar MPPT Mạnh Quân\n\n**Hướng dẫn:**\n- Nhập các Chipset ID, cách nhau bằng dấu phẩy (,)\n- Không giới hạn số lượng thiết bị\n\n**Ví dụ:**\n- 1 thiết bị: `547611`\n- 2 thiết bị: `547611,14756976`\n- 3 thiết bị: `547611,14756976,123456`",
+        "data": {
+          "manh_quan_ids": "Danh sách Chipset ID (cách nhau bằng dấu phẩy)"
+        }
+      }
     },
     "error": {
       "cannot_connect": "Không thể kết nối đến SmartSolar API",
@@ -66,13 +66,18 @@
     "abort": {
       "already_configured": "Tích hợp này đã được cấu hình",
       "already_in_progress": "Đang cấu hình tích hợp này",
-      "reauth_successful": "Xác thực lại thành công"
+      "reauth_successful": "Xác thực lại thành công",
+      "reconfigure_successful": "Cập nhật cấu hình thành công"
     }
   },
   "entity": {
     "number": {
       "update_interval": {
         "name": "Tần suất cập nhật"
+      },
+      "update_frequency": {
+        "name": "Tần suất cập nhật",
+        "unit": "giây"
       }
     },
     "sensor": {
@@ -99,14 +104,9 @@
       },
       "temperature": {
         "name": "Nhiệt độ"
-      }
-    }
-  },
-  "entity": {
-    "number": {
-      "update_frequency": {
-        "name": "Tần suất cập nhật",
-        "unit": "giây"
+      },
+      "status": {
+        "name": "Trạng thái"
       }
     }
   }

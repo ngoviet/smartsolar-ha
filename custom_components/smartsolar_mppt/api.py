@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Any
@@ -14,6 +15,8 @@ from .const import (
     API_BASE_URL,
     API_LOGIN_ENDPOINT,
     API_METRICS_ENDPOINT,
+    RETRY_BACKOFF_FACTOR,
+    RETRY_MAX_ATTEMPTS,
     TOKEN_REFRESH_DAYS_BEFORE_EXPIRY,
 )
 
@@ -130,6 +133,48 @@ class SmartSolarAPI:
             _LOGGER.error("Login request failed: %s", err)
             raise SmartSolarConnectionError(f"Login request failed: {err}") from err
 
+    async def _request_with_retry(
+        self,
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> aiohttp.ClientResponse:
+        """Make an HTTP request with exponential backoff retry.
+
+        Only retries on transient errors (ClientError, TimeoutError).
+        Does NOT retry on auth errors (401) or not-found (404).
+        """
+        last_exception: Exception | None = None
+        for attempt in range(RETRY_MAX_ATTEMPTS):
+            try:
+                session = await self._get_session()
+                response = await session.request(method, url, **kwargs)
+                # Don't retry auth failures or not-found — fail fast
+                if response.status in (401, 404):
+                    return response
+                if response.status < 500:
+                    return response
+                # Server error (5xx) — retry
+                last_exception = SmartSolarAPIError(
+                    f"Server error {response.status}", response.status
+                )
+            except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+                last_exception = err
+
+            if attempt < RETRY_MAX_ATTEMPTS - 1:
+                delay = RETRY_BACKOFF_FACTOR ** attempt
+                _LOGGER.warning(
+                    "Request attempt %d/%d failed: %s. Retrying in %ds...",
+                    attempt + 1, RETRY_MAX_ATTEMPTS, last_exception, delay,
+                )
+                await asyncio.sleep(delay)
+
+        if isinstance(last_exception, SmartSolarAPIError):
+            raise last_exception
+        raise SmartSolarConnectionError(
+            f"Request failed after {RETRY_MAX_ATTEMPTS} attempts: {last_exception}"
+        ) from last_exception
+
     async def refresh_token_if_needed(self) -> None:
         """Refresh token if it's close to expiry."""
         if not self._token or not self._token_expiry:
@@ -163,10 +208,11 @@ class SmartSolarAPI:
         }
 
         try:
-            url = f"{API_BASE_URL}/Metric/ProjectMetrics?projectId={project_id}"
-            _LOGGER.debug("Project metrics API call - URL: %s", url)
-            
-            async with session.get(url, headers=headers) as response:
+            url = f"{API_BASE_URL}/Metric/ProjectMetrics"
+            params = {"projectId": project_id}
+            _LOGGER.debug("Project metrics API call - URL: %s, projectId: %s", url, project_id)
+
+            async with session.get(url, headers=headers, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
                     
@@ -221,13 +267,14 @@ class SmartSolarAPI:
 
         try:
             if mode == "device":
-                # For device mode, use Device/Status endpoint
+                # For device mode, use Device/Status endpoint with params
                 device_guid = chipset_ids[0]
-                url = f"{API_BASE_URL}/Device/Status?deviceGuid={device_guid}"
-                async with session.get(url, headers=headers) as response:
+                url = f"{API_BASE_URL}/Device/Status"
+                params = {"deviceGuid": device_guid}
+                async with session.get(url, headers=headers, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        _LOGGER.debug("Device API response: %s", data)
+                        _LOGGER.debug("Device API response received successfully")
                         return data
                     else:
                         error_text = await response.text()
@@ -235,22 +282,18 @@ class SmartSolarAPI:
                         raise SmartSolarAPIError(f"Device API failed: {error_text}", response.status)
             else:
                 # For project mode, use Metric/SynthesisMetrics endpoint
-                # Add multiple deviceGuids parameters (deviceGuids=547611&deviceGuids=14756976)
-                # Use aiohttp's params handling to create multiple parameters with same name
-                device_guids_list = chipset_ids  # Keep as list for aiohttp to handle properly
-
-                _LOGGER.debug("Project mode API call - URL: %s, deviceType: %s, deviceGuids: %s", 
-                              API_METRICS_ENDPOINT, device_type, device_guids_list)
-                # Build URL with multiple deviceGuids parameters manually
-                url = f"{API_METRICS_ENDPOINT}?deviceType={device_type}"
+                # aiohttp params= handles multiple deviceGuids values correctly
+                params: list[tuple[str, str]] = [("deviceType", str(device_type))]
                 for chipset_id in chipset_ids:
-                    url += f"&deviceGuids={chipset_id}"
-                
-                _LOGGER.debug("Project mode final URL: %s", url)
-                
+                    params.append(("deviceGuids", chipset_id))
+
+                _LOGGER.debug("Project mode API call - URL: %s, params: %s",
+                              API_METRICS_ENDPOINT, params)
+
                 async with session.get(
-                    url,
+                    API_METRICS_ENDPOINT,
                     headers=headers,
+                    params=params,
                 ) as response:
                     if response.status == 200:
                         data = await response.json()

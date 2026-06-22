@@ -3,7 +3,9 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 [![GitHub release](https://img.shields.io/github/release/ngoviet/smartsolar-ha.svg)](https://github.com/ngoviet/smartsolar-ha/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![HA Version](https://img.shields.io/badge/Home%20Assistant-2023.1%2B-41BDF5)](https://www.home-assistant.io)
+[![HA Version](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-41BDF5)](https://www.home-assistant.io)
+[![Tests](https://img.shields.io/badge/tests-93%20passed-brightgreen)](https://github.com/ngoviet/smartsolar-ha)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org)
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ngoviet&repository=smartsolar-ha&category=integration)
 
@@ -92,6 +94,49 @@ SmartSolarDataUpdateCoordinator (polling)
 Sensor (×9)   Number (update interval)
 ```
 
+## Changelog
+
+### v1.3.0 (2026-06-22)
+
+**Critical Fixes:**
+- Fix `refresh_token` service crash — wrong method name causing `AttributeError`
+- Fix reconfigure flow wiping config entries — now properly merges existing data
+- Fix duplicate `"entity"` key breaking all sensor translations silently
+- Fix hardcoded Vietnamese "Tổng" in sensor names → English "Total"
+
+**New Features:**
+- **Re-authentication flow** (`async_step_reauth`) — handle expired credentials without re-configuring
+- **Config entry diagnostics** (`diagnostics.py`) — download detailed diagnostics from HA UI
+- **Exponential backoff retry** — 3 attempts with 1s/2s/4s backoff for network errors and 5xx server errors
+- **Config migration** (`async_migrate_entry`) — seamless upgrade from v1.1/1.2 config entries
+
+**Code Quality:**
+- **93-unit test suite** covering `api.py`, `sensor.py`, `number.py`, `config_flow.py`, `coordinator.py`, `const.py`
+- **`pyproject.toml`** with ruff linting and mypy type checking
+- **`.pre-commit-config.yaml`** for automated code quality checks
+- **GitHub Actions CI/CD** — Python 3.12 matrix, lint, format, tests with coverage
+- **HACS validation** — automatic validation on push/PR
+
+**Additional:**
+- Vietnamese labels → English in UI (with `translations/vi.json` for Vietnamese users)
+- `allow_multiple_instances` replaces deprecated `is_matching()`
+- `RestoreEntity` on sensor base class preserves state across HA restarts
+- Cached API client in config flow avoids creating new connections per step
+- aiohttp `params=` for clean URL construction instead of manual string concatenation
+- Log sanitization — summary only in debug logs, not full API response
+- New files: `hacs.json`, `LICENSE`, `diagnostics.py`
+
+### v1.2.2
+- `max_value` validation to reject garbage sensor readings
+
+### v1.2.1
+- Fix config entry data loss on reconfigure
+- Per-device sensor discovery from API response
+- Orphaned entity cleanup on unload
+
+### v1.2.0
+- Bug fixes, performance optimization, HAOS future compatibility
+
 ## Troubleshooting
 
 | Issue | Solution |
@@ -109,8 +154,8 @@ Sensor (×9)   Number (update interval)
 
 ## Requirements
 
-- Home Assistant **2023.1** or newer
-- Python **3.11+**
+- Home Assistant **2024.1** or newer
+- Python **3.12+**
 - `aiohttp >= 3.8.0`
 - SmartSolar account (registered at [smartsolar.io.vn](https://smartsolar.io.vn))
 

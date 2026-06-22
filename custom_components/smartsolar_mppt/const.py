@@ -19,6 +19,8 @@ DEFAULT_UPDATE_INTERVAL = timedelta(seconds=5)  # 5 seconds
 MIN_UPDATE_INTERVAL = 1  # 1 second
 MAX_UPDATE_INTERVAL = 30  # 30 seconds
 TOKEN_REFRESH_DAYS_BEFORE_EXPIRY = 7  # days
+RETRY_MAX_ATTEMPTS = 3
+RETRY_BACKOFF_FACTOR = 2  # Exponential backoff: 1s, 2s, 4s
 
 # Sensor definitions
 SENSOR_TYPES = {
@@ -144,7 +146,7 @@ def build_device_info(entry_id: str, mode: str | None = None, project_id: str | 
         "name": device_name,
         "manufacturer": "SmartSolar",
         "model": "MPPT Controller",
-        "sw_version": "1.2.0",
+        "sw_version": "1.3.0",
         "hw_version": "MPPT",
         "configuration_url": "https://smartsolar.io.vn/",
     }

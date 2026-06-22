@@ -66,13 +66,18 @@
     "abort": {
       "already_configured": "This integration is already configured",
       "already_in_progress": "Configuration for this integration is already in progress",
-      "reauth_successful": "Reauthentication successful"
+      "reauth_successful": "Reauthentication successful",
+      "reconfigure_successful": "Configuration updated successfully"
     }
   },
   "entity": {
     "number": {
       "update_interval": {
         "name": "Update Interval"
+      },
+      "update_frequency": {
+        "name": "Update Frequency",
+        "unit": "seconds"
       }
     },
     "sensor": {
@@ -102,14 +107,6 @@
       },
       "status": {
         "name": "Status"
-      }
-    }
-  },
-  "entity": {
-    "number": {
-      "update_frequency": {
-        "name": "Update Frequency",
-        "unit": "seconds"
       }
     }
   }

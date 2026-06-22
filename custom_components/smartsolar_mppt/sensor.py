@@ -9,6 +9,7 @@ from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
@@ -93,7 +94,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
+class SmartSolarSensor(CoordinatorEntity, RestoreEntity, SensorEntity):  # type: ignore[misc]
     """Base class for SmartSolar sensors."""
 
     __slots__ = (
@@ -165,7 +166,7 @@ class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
             self._attr_name = f"{base_name} ({device_guid})"
         else:
             # Synthesis sensor: add "Tổng" for clarity
-            self._attr_name = f"Tổng {base_name}"
+            self._attr_name = f"Total {base_name}"
 
         self._attr_native_unit_of_measurement = sensor_info.get("unit")
         self._attr_icon = sensor_info["icon"]
@@ -189,7 +190,7 @@ class SmartSolarSensor(CoordinatorEntity, SensorEntity):  # type: ignore[misc]
             return None
 
         # Use dict for O(1) lookup instead of list iteration
-        stream_dict = {s["name"]: s["value"] for s in data_streams if s.get("name") and s.get("value") is not None}
+        stream_dict = {s["name"]: s["value"] for s in data_streams if s.get("name") is not None and s.get("value") is not None}
         
         value = stream_dict.get(self._sensor_type)
         

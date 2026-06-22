@@ -65,8 +65,8 @@ STEP_PROJECT_METHOD_DATA_SCHEMA = vol.Schema(
         vol.Required("project_method"): selector.SelectSelector(
             selector.SelectSelectorConfig(
                 options=[
-                    {"value": PROJECT_MODE_BY_ID, "label": "Theo Project ID (khuyến nghị)"},
-                    {"value": PROJECT_MODE_BY_DEVICES, "label": "Theo danh sách Device IDs"}
+                    {"value": PROJECT_MODE_BY_ID, "label": "By Project ID (recommended)"},
+                    {"value": PROJECT_MODE_BY_DEVICES, "label": "By Device ID list"}
                 ]
             )
         )
@@ -87,7 +87,10 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for SmartSolar MPPT."""
 
     VERSION = 1
-    MINOR_VERSION = 1
+    MINOR_VERSION = 2
+
+    # Allow multiple config entries for different accounts/devices
+    allow_multiple_instances = True
 
     def __init__(self) -> None:
         """Initialize the config flow."""
@@ -99,11 +102,19 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._project_method: str | None = None
         self._project_id: str | None = None
         self._device_types: list[int] | None = None
+        self._api: SmartSolarAPI | None = None
 
-    def is_matching(self, other_flow: "ConfigFlow") -> bool:  # type: ignore[override]
-        """Check if this config entry matches the current flow."""
-        # Simply return False to allow multiple instances
-        return False
+    def _get_api(self) -> SmartSolarAPI:
+        """Get or create cached API client for the flow."""
+        if self._api is None:
+            if self._username is None or self._password is None:
+                raise ValueError("Missing credentials")
+            self._api = SmartSolarAPI(
+                username=self._username,
+                password=self._password,
+                hass=self.hass,
+            )
+        return self._api
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -122,13 +133,8 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "password_required"
             else:
                 try:
-                    # Test the connection
-                    api = SmartSolarAPI(
-                        username=self._username,
-                        password=self._password,
-                        hass=self.hass,
-                    )
-                    
+                    # Test the connection using cached API
+                    api = self._get_api()
                     if await api.test_connection():
                         return await self.async_step_mode()
                     else:
@@ -197,18 +203,13 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 # Test API call with project ID
                 try:
-                    if not self._username or not self._password:
-                        raise ValueError("Missing credentials")
-                    api = SmartSolarAPI(
-                        username=self._username,
-                        password=self._password,
-                        hass=self.hass,
-                    )
+                    api = self._get_api()
                     try:
                         await api.login()
                         await api.get_project_metrics(project_id)
                     finally:
                         await api.close()
+                        self._api = None  # Reset cached API after use
                     
                     # Success - save configuration
                     self._project_id = project_id
@@ -266,12 +267,8 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 try:
                     if self._username is None or self._password is None or self._mode is None:
                         raise ValueError("Missing credentials")
-                    api = SmartSolarAPI(
-                        username=self._username,
-                        password=self._password,
-                        hass=self.hass,
-                    )
-                    
+                    api = self._get_api()
+
                     # Test with first device
                     await api.get_metrics(
                         device_type=device_types[0],
@@ -337,11 +334,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     try:
                         if self._username is None or self._password is None or self._device_type is None or self._mode is None:
                             raise ValueError("Missing credentials")
-                        api = SmartSolarAPI(
-                            username=self._username,
-                            password=self._password,
-                            hass=self.hass,
-                        )
+                        api = self._get_api()
 
                         # Test with the first chipset ID
                         await api.get_metrics(
@@ -380,9 +373,9 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Build help text based on mode
         help_text = ""
         if self._mode == MODE_DEVICE:
-            help_text = "Nhập ChipsetId của thiết bị (chỉ một ID)."
+            help_text = "Enter device ChipsetId (single ID)."
         elif self._mode == MODE_PROJECT:
-            help_text = "Nhập các ChipsetId của thiết bị, phân cách bằng dấu phẩy (ví dụ: ID1, ID2, ID3)."
+            help_text = "Enter device ChipsetIds, comma-separated (e.g., ID1, ID2, ID3)."
 
         return self.async_show_form(
             step_id="chipset_ids",
@@ -391,15 +384,54 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={"help_text": help_text},
         )
 
+    async def async_step_reauth(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle re-authentication flow for expired credentials."""
+        errors: dict[str, str] = {}
+        reauth_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        if not reauth_entry:
+            return self.async_abort(reason="unknown_entry")
+
+        if user_input is not None:
+            try:
+                api = SmartSolarAPI(
+                    username=user_input[CONF_USERNAME],
+                    password=user_input[CONF_PASSWORD],
+                    hass=self.hass,
+                )
+                if await api.test_connection():
+                    self.hass.config_entries.async_update_entry(
+                        reauth_entry, data={**reauth_entry.data, **user_input}
+                    )
+                    await self.hass.config_entries.async_reload(reauth_entry.entry_id)
+                    return self.async_abort(reason="reauth_successful")
+                errors["base"] = ERROR_CANNOT_CONNECT
+            except SmartSolarAPIError as err:
+                if err.status_code == 401:
+                    errors["base"] = ERROR_INVALID_CREDENTIALS
+                else:
+                    errors["base"] = ERROR_CANNOT_CONNECT
+
+        return self.async_show_form(
+            step_id="reauth",
+            data_schema=vol.Schema({
+                vol.Required(CONF_USERNAME, default=reauth_entry.data.get(CONF_USERNAME, "")): str,
+                vol.Required(CONF_PASSWORD): str,
+            }),
+            errors=errors,
+        )
+
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle reconfigure flow (HA 2024.3+)."""
         reconfigure_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         if not reconfigure_entry:
             return self.async_abort(reason="unknown_entry")
         if user_input is not None:
-            self.hass.config_entries.async_update_entry(reconfigure_entry, data=user_input)
+            merged_data = {**reconfigure_entry.data, **user_input}
+            self.hass.config_entries.async_update_entry(reconfigure_entry, data=merged_data)
             await self.hass.config_entries.async_reload(reconfigure_entry.entry_id)
-            return self.async_abort(reason="reauth_successful")
+            return self.async_abort(reason="reconfigure_successful")
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=vol.Schema({
