@@ -435,7 +435,7 @@ SmartSolarAPIError(Exception)
 |------|-------|
 | HA URL | `http://192.168.10.15:8123` |
 | HA Version | 2026.5.0 (Docker) |
-| SSH | `vokupt@192.168.10.15` / `qweszxc12` |
+| SSH | `vokupt@192.168.10.15` — password via `HA_PASS` env var |
 | HA Token (long-lived) | Trong `HA_info.txt` |
 | SMB Config | `\\192.168.10.15\config\` (user: vokupt) |
 | SMB packages | `\\192.168.10.15\config\packages\` |
@@ -843,7 +843,7 @@ import paramiko, base64
 
 client = paramiko.SSHClient()
 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-client.connect('192.168.10.15', username='vokupt', password='qweszxc12')
+client.connect('192.168.10.15', username='vokupt', password=os.environ['HA_PASS'])
 
 # Encode file → base64 → echo lên server → decode → write
 with open('file.py', 'rb') as f:
@@ -867,7 +867,7 @@ client.exec_command('sudo docker restart homeassistant')
 ### Deploy YAML packages lên HA (qua SMB)
 ```powershell
 # Mount SMB
-net use Z: \\192.168.10.15\config /user:vokupt qweszxc12
+net use Z: \\192.168.10.15\config /user:vokupt %HA_PASS%
 # Copy
 copy "D:\Code\HA-Config\packages\30_solar_24v_energy_stats.yaml" "Z:\packages\"
 # Restart HA

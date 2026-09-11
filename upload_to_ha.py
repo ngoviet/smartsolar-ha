@@ -4,9 +4,9 @@ import os
 import base64
 import sys
 
-HA_HOST = "192.168.10.15"
-HA_USER = "vokupt"
-HA_PASS = "qweszxc12"
+HA_HOST = os.environ.get("HA_HOST", "192.168.10.15")
+HA_USER = os.environ.get("HA_USER", "vokupt")
+HA_PASS = os.environ["HA_PASS"]
 SRC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "custom_components", "smartsolar_mppt")
 DST_DIR = "/homeassistant/custom_components/smartsolar_mppt"
 

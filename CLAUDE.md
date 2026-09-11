@@ -156,8 +156,8 @@ ruff check custom_components/
 
 ### HA Connection
 - URL: `http://192.168.10.15:8123`
-- SSH: `vokupt@192.168.10.15` / `qweszxc12`
-- Long-lived token available
+- SSH: `vokupt@192.168.10.15` — password via `HA_PASS` env var (never commit)
+- Long-lived token: create via HA Profile → Security → Long-lived access tokens; export as `HA_TOKEN`
 
 ### Code Style Targets
 - Python 3.12+, Home Assistant 2024.1+

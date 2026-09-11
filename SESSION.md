@@ -192,8 +192,8 @@ PV Voltage (V), PV Current (A), Battery Voltage (V), Battery Current (A), Charge
 ## Kết nối HA
 
 - **URL:** http://192.168.10.15:8123
-- **SSH:** `vokupt@192.168.10.15` / password: `qweszxc12`
-- **HA Token:** `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiI0YWM5MWI2N2I2OTM0Y2ZhOGQ4OGY4YzIzYmViNGQ5NSIsImlhdCI6MTc3NzQ2NDk3MSwiZXhwIjoyMDkyODI0OTcxfQ.qWN6mb2BHMb6ypJR-pYFY1MhDVGGBziGL7Vgvm-JfO8`
+- **SSH:** `vokupt@192.168.10.15` / password: `$HA_PASS` (env var, never commit)
+- **HA Token:** `$HA_TOKEN` — create via HA Profile → Security → Long-lived access tokens
 - **HA chạy trong Docker:** `sudo docker exec homeassistant ...`
 - **Config path:** `/config` (mount từ host, shared với container)
 - **Restart HA:** `curl -X POST -H "Authorization: Bearer <token>" http://192.168.10.15:8123/api/services/homeassistant/restart`
@@ -205,7 +205,7 @@ import paramiko, base64
 
 client = paramiko.SSHClient()
 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-client.connect('192.168.10.15', username='vokupt', password='qweszxc12')
+client.connect('192.168.10.15', username='vokupt', password=os.environ['HA_PASS'])
 
 with open('file.py', 'rb') as f:
     b64 = base64.b64encode(f.read()).decode()
