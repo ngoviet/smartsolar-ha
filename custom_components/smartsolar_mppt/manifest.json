@@ -3,6 +3,7 @@
   "name": "SmartSolar MPPT",
   "version": "1.5.1",
   "documentation": "https://github.com/ngoviet/smartsolar-ha",
+  "issue_tracker": "https://github.com/ngoviet/smartsolar-ha/issues",
   "codeowners": ["@ngoviet"],
   "requirements": ["aiohttp>=3.8.0", "aiomqtt>=2.0"],
   "config_flow": true,
