@@ -1140,7 +1140,7 @@ Linting: ruff
 
 ## Appendix A: File Manifest
 
-### Trong `D:\Code\HA-Config\smartsolar_mppt\` (root-level project)
+### Trong `D:\Code\SmartSolar\` (repo riêng, tách khỏi HA-Config 2026-09-27)
 | File | Purpose |
 |------|---------|
 | `CLAUDE.md` | Hướng dẫn cho AI agents |
