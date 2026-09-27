@@ -25,27 +25,16 @@ jobs:
           fi
           echo "Version $TAG validated"
 
-      - name: Generate changelog
-        id: changelog
-        uses: mikepenz/release-changelog-builder-action@v4
-        with:
-          configuration: |
-            {
-              "categories": [
-                {"title": "## 🐛 Bug Fixes", "labels": ["bug", "fix"]},
-                {"title": "## ✨ Features", "labels": ["feature", "enhancement"]},
-                {"title": "## 🧪 Testing & CI", "labels": ["test", "ci"]},
-                {"title": "## 📚 Documentation", "labels": ["docs", "documentation"]},
-                {"title": "## 🔧 Maintenance", "labels": []}
-              ],
-              "template": "${{CHANGELOG}}"
-            }
-
+      # The release body comes from GitHub's own generated notes. An earlier
+      # revision piped a `mikepenz/release-changelog-builder-action` config
+      # containing "${{CHANGELOG}}" through `with:`, which GitHub rejects while
+      # parsing the workflow ("undefined variable CHANGELOG"). That made every
+      # tag push end in a startup failure with no jobs, so no release was ever
+      # published by this workflow.
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
-          body: ${{ steps.changelog.outputs.changelog }}
           draft: false
           prerelease: false
           generate_release_notes: true
