@@ -18,10 +18,14 @@ jobs:
         with:
           python-version: "3.14"
 
+      # Install the same spec the docs tell a developer to use, so the ruff and
+      # mypy floors live in pyproject.toml only. They used to be repeated here as
+      # `ruff>=0.4` / `mypy>=1.9`, versions that cannot run this repository's
+      # gate at all (see the note in pyproject.toml).
       - name: Install lint tooling
         run: |
           python -m pip install --upgrade pip
-          pip install "ruff>=0.4" "mypy>=1.9" "homeassistant==2026.9.2"
+          pip install ".[test,dev]"
 
       # Same file list as SOURCES in deploy_to_ha.py, so the local gate can
       # never be weaker than CI.

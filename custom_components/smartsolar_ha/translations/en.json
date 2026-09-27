@@ -43,6 +43,22 @@
         "data": {
           "manh_quan_ids": "Chipset ID List (comma-separated)"
         }
+      },
+      "reauth": {
+        "title": "SmartSolar login expired",
+        "description": "Enter the username and password again for this SmartSolar account",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure SmartSolar MPPT",
+        "description": "Update the SmartSolar credentials used by this integration",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -53,6 +69,7 @@
       "password_required": "Please enter a password",
       "chipset_ids_required": "Please enter Chipset ID",
       "chipset_ids_invalid": "Invalid Chipset ID",
+      "single_chipset_id_required": "Device mode reads one charge controller — enter a single ChipsetId",
       "device_not_found": "Device not found with this Chipset ID",
       "manh_quan_ids_required": "Please enter IDs for SmartSolar MPPT Mạnh Quân",
       "at_least_one_device_required": "Please select at least one device type",
@@ -67,7 +84,8 @@
       "already_configured": "This integration is already configured",
       "already_in_progress": "Configuration for this integration is already in progress",
       "reauth_successful": "Reauthentication successful",
-      "reconfigure_successful": "Configuration updated successfully"
+      "reconfigure_successful": "Configuration updated successfully",
+      "unknown_entry": "This integration's configuration entry no longer exists"
     }
   },
   "entity": {

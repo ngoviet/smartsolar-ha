@@ -22,7 +22,7 @@ from contextlib import asynccontextmanager
 from copy import deepcopy
 from datetime import timedelta
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.config_entries import SOURCE_USER, ConfigEntry
@@ -134,6 +134,16 @@ class FakeConfigEntries:
         self.hass = hass
         self.platforms: dict[str, FakeEntityPlatform] = {}
         self.reloaded: list[str] = []
+        self.entries: list[Any] = []
+        # Knobs for the failure paths real Home Assistant can also take.
+        self.unload_result = True
+        self.forward_error: Exception | None = None
+
+    def async_entries(self, domain: str | None = None) -> list[Any]:
+        """Return the entries known to this fake (HA's registry API)."""
+        if domain is None:
+            return list(self.entries)
+        return [entry for entry in self.entries if entry.domain == domain]
 
     async def async_forward_entry_setups(self, entry: Any, platforms: list[Any]) -> bool:
         import custom_components.smartsolar_ha.number as number_mod
@@ -148,9 +158,13 @@ class FakeConfigEntries:
             fake = FakeEntityPlatform()
             self.platforms[name] = fake
             await setup[name](self.hass, entry, fake.add)
+            if self.forward_error is not None:
+                raise self.forward_error
         return True
 
     async def async_unload_platforms(self, entry: Any, platforms: list[Any]) -> bool:
+        if not self.unload_result:
+            return False
         for platform in platforms:
             name = getattr(platform, "value", str(platform))
             self.platforms.pop(name, None)
@@ -187,6 +201,10 @@ class FakeServices:
         self.registered[(domain, service)] = func
         self.schemas[(domain, service)] = schema
 
+    def async_remove(self, domain: str, service: str) -> None:
+        self.registered.pop((domain, service), None)
+        self.schemas.pop((domain, service), None)
+
     def has_service(self, domain: str, service: str) -> bool:
         return (domain, service) in self.registered
 
@@ -217,7 +235,7 @@ async def running_hass():
         await hass.async_stop()
 
 
-def make_entry(**overrides: Any) -> ConfigEntry:
+def make_entry(*, entry_id: str = "01K7DZBBS75AS1WBR48FVXVQZ1", **overrides: Any) -> ConfigEntry:
     """Build a realistic project-mode config entry."""
     data = {
         "username": "vokupt",
@@ -236,7 +254,7 @@ def make_entry(**overrides: Any) -> ConfigEntry:
         title="SmartSolar MPPT (Project)",
         data=data,
         source=SOURCE_USER,
-        entry_id="01K7DZBBS75AS1WBR48FVXVQZ1",
+        entry_id=entry_id,
         unique_id="vokupt_project_2_1072",
         discovery_keys={},
         subentries_data=None,
@@ -244,12 +262,9 @@ def make_entry(**overrides: Any) -> ConfigEntry:
     )
 
 
-async def setup_with_mocked_api(hass, entry, *, metrics=None, status=None, fail_first=False):
-    """Run async_setup_entry with a stubbed API client, return the coordinator."""
+def _install_mocked_api(*, metrics, status, fail_first: bool = False):
+    """Patch ``SmartSolarAPI`` on the package with a scripted stub."""
     import custom_components.smartsolar_ha as integration
-
-    metrics = metrics if metrics is not None else deepcopy(PROJECT_METRICS)
-    status = status if status is not None else deepcopy(DEVICE_STATUS)
 
     class FakeAPI:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -277,13 +292,27 @@ async def setup_with_mocked_api(hass, entry, *, metrics=None, status=None, fail_
         async def close(self) -> None:
             self.closed = True
 
-    original = integration.SmartSolarAPI
-    integration.SmartSolarAPI = FakeAPI  # type: ignore[assignment]
-    try:
-        assert await integration.async_setup_entry(hass, entry)
-    finally:
-        integration.SmartSolarAPI = original  # type: ignore[assignment]
+    # Patch the name the package actually calls (it did
+    # `from .api import SmartSolarAPI`).
+    return patch.object(integration, "SmartSolarAPI", FakeAPI)
 
+
+async def attempt_setup_with_mocked_api(hass, entry, *, metrics=None, status=None, fail_first=False) -> bool:
+    """Run async_setup_entry against a stubbed API and return its result verbatim."""
+    import custom_components.smartsolar_ha as integration
+
+    with _install_mocked_api(
+        metrics=metrics if metrics is not None else deepcopy(PROJECT_METRICS),
+        status=status if status is not None else deepcopy(DEVICE_STATUS),
+        fail_first=fail_first,
+    ):
+        return await integration.async_setup_entry(hass, entry)
+
+
+async def setup_with_mocked_api(hass, entry, *, metrics=None, status=None, fail_first=False):
+    """Run async_setup_entry with a stubbed API client, return the coordinator."""
+    result = await attempt_setup_with_mocked_api(hass, entry, metrics=metrics, status=status, fail_first=fail_first)
+    assert result, "async_setup_entry unexpectedly returned False"
     return hass.data[DOMAIN][entry.entry_id]
 
 
@@ -492,6 +521,56 @@ class TestUnloadTeardown:
             assert await async_unload_entry(hass, entry) is True
 
 
+class TestServiceCleanup:
+    """The refresh_token service must not outlive its config entry.
+
+    Home Assistant only removes services that an integration registered when the
+    integration's own setup/unload pair does it: a service registered inside
+    ``async_setup_entry`` survives the entry, so after removing the integration
+    the service stayed in the registry and every call failed with
+    ServiceValidationError.
+    """
+
+    @pytest.mark.asyncio
+    async def test_service_is_removed_with_the_last_entry(self):
+        async with running_hass() as (hass, config_entries, _devices, services):
+            entry = make_entry()
+            config_entries.entries.append(entry)
+            await setup_with_mocked_api(hass, entry)
+
+            assert services.has_service(DOMAIN, "refresh_token")
+
+            assert await async_unload_entry(hass, entry)
+
+            assert not services.has_service(DOMAIN, "refresh_token")
+
+    @pytest.mark.asyncio
+    async def test_service_survives_while_another_entry_exists(self):
+        async with running_hass() as (hass, config_entries, _devices, services):
+            entry = make_entry()
+            other = make_entry(entry_id="01K7DZBBS75AS1WBR48FVXVQZ2")
+            config_entries.entries.extend([entry, other])
+            await setup_with_mocked_api(hass, entry)
+
+            assert await async_unload_entry(hass, entry)
+
+            assert services.has_service(DOMAIN, "refresh_token")
+
+    @pytest.mark.asyncio
+    async def test_service_is_re_registered_on_setup(self):
+        """A reload must restore the service (setup re-registers it)."""
+        async with running_hass() as (hass, config_entries, _devices, services):
+            entry = make_entry()
+            config_entries.entries.append(entry)
+            await setup_with_mocked_api(hass, entry)
+            assert await async_unload_entry(hass, entry)
+            assert not services.has_service(DOMAIN, "refresh_token")
+
+            await setup_with_mocked_api(hass, entry)
+
+            assert services.has_service(DOMAIN, "refresh_token")
+
+
 class TestDeviceModeSetup:
     """End-to-end: a device-mode entry produces one set of sensors."""
 
@@ -518,6 +597,280 @@ class TestDeviceModeSetup:
 
             platform = config_entries.platforms["sensor"]
             assert platform.by_unique_id(f"{entry.entry_id}_d_547611_pv_voltage").native_value == pytest.approx(5.26)
+
+
+class TestMqttCredentials:
+    """Project mode must find the MQTT credentials even when a device is silent.
+
+    They are per-SERVER credentials carried in ``/Device/Status``. Only querying
+    the first device meant one offline charger (or one whose payload omits
+    ``mqttConnection``) silently disabled real-time updates for the whole
+    project.
+    """
+
+    def _fake_client(self) -> MagicMock:
+        client = MagicMock()
+        client.start = AsyncMock()
+        client.stop = AsyncMock()
+        return client
+
+    def _install_api(self, status_by_guid: dict[str, Any], calls: list[str]):
+        """Stub SmartSolarAPI whose /Device/Status answer depends on the GUID."""
+        import custom_components.smartsolar_ha as integration
+
+        class FakeAPI:
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                self.token = "test-token"
+                self.token_expiry = None
+                self.closed = False
+
+            async def get_project_metrics(self, project_id: str) -> dict[str, Any]:
+                return deepcopy(PROJECT_METRICS)
+
+            async def get_metrics(self, **kwargs: Any) -> dict[str, Any]:
+                return deepcopy(PROJECT_METRICS)
+
+            async def get_device_status(self, device_guid: str) -> dict[str, Any]:
+                calls.append(device_guid)
+                return deepcopy(status_by_guid.get(device_guid, {}))
+
+            async def refresh_token_if_needed(self) -> None:
+                return None
+
+            async def close(self) -> None:
+                self.closed = True
+
+        # Patch the name the package actually calls (it did
+        # `from .api import SmartSolarAPI`).
+        return patch.object(integration, "SmartSolarAPI", FakeAPI)
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_the_next_device(self):
+        """The first GUID in sorted order reports no mqttConnection."""
+        import custom_components.smartsolar_ha as integration
+
+        async with running_hass() as (hass, _ce, _devices, _services):
+            entry = make_entry()
+            calls: list[str] = []
+            statuses = {"14756976": deepcopy(DEVICE_STATUS)}
+            fake_client = self._fake_client()
+
+            with (
+                self._install_api(statuses, calls),
+                patch.object(integration, "SmartSolarMQTTClient", MagicMock(return_value=fake_client)) as ctor,
+            ):
+                assert await integration.async_setup_entry(hass, entry)
+
+            # Sorted order is 547611 then 14756976: both were probed.
+            assert calls == ["547611", "14756976"]
+            ctor.assert_called_once()
+            assert ctor.call_args.kwargs["username"] == "web_app"
+            assert ctor.call_args.kwargs["password"] == "QWJjQDEzNTc5"
+            fake_client.start.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_no_credentials_anywhere_disables_mqtt(self):
+        import custom_components.smartsolar_ha as integration
+
+        async with running_hass() as (hass, _ce, _devices, _services):
+            entry = make_entry()
+            calls: list[str] = []
+            fake_client = self._fake_client()
+
+            with (
+                self._install_api({}, calls),
+                patch.object(integration, "SmartSolarMQTTClient", MagicMock(return_value=fake_client)) as ctor,
+            ):
+                assert await integration.async_setup_entry(hass, entry)
+
+            # Probing is bounded, not one call per project device.
+            assert calls == ["547611", "14756976"]
+            ctor.assert_not_called()
+            fake_client.start.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_non_mapping_mqtt_connection_is_ignored(self):
+        """Third-party JSON: `mqttConnection` can be null or a scalar."""
+        import custom_components.smartsolar_ha as integration
+
+        async with running_hass() as (hass, _ce, _devices, _services):
+            entry = make_entry()
+            calls: list[str] = []
+            statuses = {"547611": {"mqttConnection": None}, "14756976": {"mqttConnection": "nope"}}
+            fake_client = self._fake_client()
+
+            with (
+                self._install_api(statuses, calls),
+                patch.object(integration, "SmartSolarMQTTClient", MagicMock(return_value=fake_client)) as ctor,
+            ):
+                assert await integration.async_setup_entry(hass, entry)
+
+            ctor.assert_not_called()
+
+
+class TestLiveDataAvailability:
+    """A failed HTTP poll must not blank out entities MQTT is still feeding.
+
+    ``CoordinatorEntity.available`` is just ``last_update_success``, so during a
+    cloud outage every entity reported ``unavailable`` while ``native_value``
+    kept returning live MQTT readings — the values were computed and then thrown
+    away by the state machine and the recorder.
+    """
+
+    @pytest.mark.asyncio
+    async def test_sensor_stays_available_with_live_mqtt(self):
+        async with running_hass() as (hass, config_entries, _devices, _services):
+            entry = make_entry()
+            coordinator = await setup_with_mocked_api(hass, entry)
+            sensor = config_entries.platforms["sensor"].by_unique_id(f"{entry.entry_id}_pd_547611_charge_power")
+
+            await coordinator.async_process_mqtt_data("547611", {"charge_power": 321.0})
+            assert sensor.available is True
+
+            coordinator.last_update_success = False
+            await coordinator.async_process_mqtt_data("547611", {"charge_power": 400.0})
+
+            assert sensor.native_value == pytest.approx(400.0)
+            assert sensor.available is True, "live MQTT data exists but the entity reports unavailable"
+
+    @pytest.mark.asyncio
+    async def test_sensor_is_unavailable_without_data_for_its_device(self):
+        """Availability is per device: another charger's MQTT feed is not ours."""
+        async with running_hass() as (hass, config_entries, _devices, _services):
+            entry = make_entry()
+            coordinator = await setup_with_mocked_api(hass, entry)
+            second = config_entries.platforms["sensor"].by_unique_id(f"{entry.entry_id}_pd_14756976_charge_power")
+
+            await coordinator.async_process_mqtt_data("547611", {"charge_power": 321.0})
+            coordinator.last_update_success = False
+
+            assert second.available is False
+
+    @pytest.mark.asyncio
+    async def test_synthesis_sensor_stays_available_with_any_live_data(self):
+        async with running_hass() as (hass, config_entries, _devices, _services):
+            entry = make_entry()
+            coordinator = await setup_with_mocked_api(hass, entry)
+            total = config_entries.platforms["sensor"].by_unique_id(f"{entry.entry_id}_p_1072_charge_power")
+
+            await coordinator.async_process_mqtt_data("14756976", {"charge_power": 100.0})
+            coordinator.last_update_success = False
+
+            assert total.available is True
+
+    @pytest.mark.asyncio
+    async def test_entities_are_unavailable_before_any_successful_poll(self):
+        """Buffered MQTT data is only readable once a poll has produced data."""
+        async with running_hass() as (hass, config_entries, _devices, _services):
+            entry = make_entry()
+            coordinator = await setup_with_mocked_api(hass, entry)
+            sensor = config_entries.platforms["sensor"].by_unique_id(f"{entry.entry_id}_pd_547611_charge_power")
+
+            coordinator.data = None
+            coordinator.last_update_success = False
+            await coordinator.async_process_mqtt_data("547611", {"charge_power": 321.0})
+
+            assert coordinator.mqtt_cached_device_count == 1
+            assert sensor.available is False
+
+    @pytest.mark.asyncio
+    async def test_number_entity_is_always_available(self):
+        """The update-interval control is local; an outage must not hide it."""
+        async with running_hass() as (hass, config_entries, _devices, _services):
+            entry = make_entry()
+            coordinator = await setup_with_mocked_api(hass, entry)
+            number = config_entries.platforms["number"].entities[0]
+
+            coordinator.last_update_success = False
+
+            assert number.available is True
+            assert number.native_value == 5.0
+
+
+class TestSetupRollback:
+    """A failed setup must release what it already created."""
+
+    @pytest.mark.asyncio
+    async def test_missing_mode_is_reported_not_raised(self):
+        """`mode` is indexed by the sensor platform, so it is validated up front.
+
+        It used to raise ``KeyError: 'mode'`` from inside sensor.py — after the
+        coordinator existed — and Home Assistant retries setup, leaking another
+        poll timer on every attempt.
+        """
+        async with running_hass() as (hass, config_entries, _devices, _services):
+            entry = make_entry()
+            data = dict(entry.data)
+            data.pop("mode")
+            config_entries.async_update_entry(entry, data=data)
+
+            assert await async_setup_entry(hass, entry) is False
+            assert entry.entry_id not in hass.data[DOMAIN]
+
+    @pytest.mark.asyncio
+    async def test_failing_platform_setup_rolls_everything_back(self):
+        """A platform that raises must not leave a coordinator behind."""
+        async with running_hass() as (hass, config_entries, _devices, _services):
+            entry = make_entry()
+            config_entries.forward_error = RuntimeError("platform exploded")
+
+            assert await attempt_setup_with_mocked_api(hass, entry) is False
+
+            assert entry.entry_id not in hass.data[DOMAIN]
+            assert config_entries.platforms == {}
+
+    @pytest.mark.asyncio
+    async def test_rollback_stops_the_coordinator_timers_and_mqtt(self):
+        """Rollback must cancel the poll timer and the midnight listener."""
+        async with running_hass() as (hass, config_entries, _devices, _services):
+            entry = make_entry()
+            config_entries.forward_error = RuntimeError("platform exploded")
+            created: list[Any] = []
+            real_init = SmartSolarDataUpdateCoordinator.__init__
+
+            def spy_init(self, *args: Any, **kwargs: Any) -> None:
+                real_init(self, *args, **kwargs)
+                created.append(self)
+
+            with patch.object(SmartSolarDataUpdateCoordinator, "__init__", spy_init):
+                assert await attempt_setup_with_mocked_api(hass, entry) is False
+
+            assert created, "the coordinator was never created"
+            assert created[0]._daily_tracker_unsub is None
+            assert created[0]._mqtt_notify_unsub is None
+            assert created[0].api.closed is True
+            assert entry.entry_id not in hass.data[DOMAIN]
+
+
+class TestUnloadOrdering:
+    """Platforms are unloaded before anything is torn down."""
+
+    @pytest.mark.asyncio
+    async def test_failed_unload_keeps_the_integration_working(self):
+        """A half-torn-down entry used to stay loaded with MQTT already dead."""
+        async with running_hass() as (hass, config_entries, _devices, _services):
+            entry = make_entry()
+            coordinator = await setup_with_mocked_api(hass, entry)
+            config_entries.unload_result = False
+
+            assert await async_unload_entry(hass, entry) is False
+
+            # Still loaded, still polling, and its teardown handles still exist.
+            assert hass.data[DOMAIN][entry.entry_id] is coordinator
+            assert coordinator._daily_tracker_unsub is not None
+            assert coordinator.api.closed is False
+
+    @pytest.mark.asyncio
+    async def test_successful_unload_still_releases_everything(self):
+        async with running_hass() as (hass, config_entries, _devices, _services):
+            entry = make_entry()
+            coordinator = await setup_with_mocked_api(hass, entry)
+
+            assert await async_unload_entry(hass, entry) is True
+
+            assert entry.entry_id not in hass.data[DOMAIN]
+            assert coordinator.api.closed is True
+            assert coordinator._daily_tracker_unsub is None
 
 
 class TestDegradedStartup:
@@ -586,6 +939,77 @@ class TestMigration:
             config_entries.async_update_entry(entry, version=99)
 
             assert await async_migrate_entry(hass, entry) is False
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("stored", ["547611,14756976", 547611, 5.5, True, {"a": 1}])
+    async def test_unusable_chipset_ids_do_not_break_migration(self, stored):
+        """A scalar used to raise TypeError; a string was iterated per character.
+
+        ``"547611,14756976"`` became ``["5", "4", "7", ...]``, and a scalar
+        raised ``TypeError`` so the entry stayed stuck on the old version.
+        """
+        async with running_hass() as (hass, config_entries, _devices, _services):
+            entry = make_entry(minor_version=2)
+            config_entries.async_update_entry(
+                entry, version=1, minor_version=1, data={**dict(entry.data), "chipset_ids": stored}
+            )
+
+            assert await async_migrate_entry(hass, entry) is True
+            assert entry.minor_version == 2
+
+    @pytest.mark.asyncio
+    async def test_comma_separated_chipset_ids_are_split(self):
+        async with running_hass() as (hass, config_entries, _devices, _services):
+            entry = make_entry(minor_version=2)
+            config_entries.async_update_entry(
+                entry, version=1, minor_version=1, data={**dict(entry.data), "chipset_ids": "547611, 14756976"}
+            )
+
+            await async_migrate_entry(hass, entry)
+
+            assert entry.data["chipset_ids"] == ["547611", "14756976"]
+
+    @pytest.mark.asyncio
+    async def test_unusable_chipset_ids_are_dropped(self):
+        async with running_hass() as (hass, config_entries, _devices, _services):
+            entry = make_entry(minor_version=2)
+            config_entries.async_update_entry(
+                entry, version=1, minor_version=1, data={**dict(entry.data), "chipset_ids": 547611}
+            )
+
+            await async_migrate_entry(hass, entry)
+
+            # Stored as a list, never the scalar that downstream code iterates.
+            assert entry.data["chipset_ids"] == []
+
+
+class TestUpdateIntervalHardening:
+    """A bad stored interval must not create a runaway poll loop."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("stored", "expected"),
+        [(0, 1), (-10, 1), (999, 30), ("abc", 5), (None, 5), (7.5, 7), (True, 5), ("12", 12)],
+    )
+    async def test_out_of_range_interval_is_clamped(self, stored, expected):
+        """``_schedule_refresh`` with interval 0 schedules the next poll in the past.
+
+        A zero/negative interval therefore produced a tight loop against the
+        cloud API. The config entry is plain JSON on disk, so the value cannot be
+        trusted.
+        """
+        from custom_components.smartsolar_ha import _resolve_update_interval
+
+        assert _resolve_update_interval(stored) == expected
+
+    @pytest.mark.asyncio
+    async def test_setup_uses_a_clamped_interval(self):
+        async with running_hass() as (hass, _ce, _devices, _services):
+            entry = make_entry(update_interval=0)
+
+            coordinator = await setup_with_mocked_api(hass, entry)
+
+            assert coordinator.update_interval == timedelta(seconds=1)
 
 
 class TestMqttLiveUpdates:

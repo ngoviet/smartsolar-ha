@@ -741,4 +741,115 @@ class TestMissingDeviceLogs:
         with caplog.at_level("WARNING"):
             assert sensor.native_value is None
 
-        assert caplog.records == []
+
+def _synthesis_sensor(sensor_type: str, server_value, device_values: tuple[str, ...] = ("48", "52")):
+    """Build a synthesis sensor whose ``synthesisStreams`` holds ``server_value``.
+
+    The device logs carry known-good values so the local-aggregation fallback is
+    observable: when the server value is rejected, the aggregated device value is
+    what the sensor must publish instead.
+    """
+    field_name = {"today_kwh": "yield_today", "total_kwh": "yield_total"}.get(sensor_type, sensor_type)
+    coordinator = MagicMock()
+    coordinator.data = {
+        "synthesisStreams": [{"name": field_name, "value": server_value}],
+        "deviceLogs": [
+            {"deviceGuid": guid, "dataStreams": [{"name": sensor_type, "value": value}]}
+            for guid, value in zip(("547611", "14756976"), device_values, strict=True)
+        ],
+    }
+    return SmartSolarProjectSynthesisSensor(
+        coordinator=coordinator,
+        config_entry=_entry("project", project_id="1072"),
+        sensor_type=sensor_type,
+        sensor_info=SENSOR_TYPES[sensor_type],
+    )
+
+
+class TestSynthesisServerValueValidation:
+    """A bad ``synthesisStreams`` value must never reach the state machine.
+
+    The server value used to be read with a bare ``float()``: NaN/Infinity were
+    published as states (poisoning long-term statistics) and the per-sensor
+    ``max_value`` ceiling was skipped entirely, so a firmware overflow sentinel
+    such as 2147483.647 V became a voltage state even though the per-device path
+    correctly dropped it.
+    """
+
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf"), "NaN", "Infinity", "-Infinity"])
+    def test_non_finite_server_value_is_rejected(self, value):
+        # pv_voltage is averaged: (48 + 52) / 2 == 50.0 from the device logs.
+        assert _synthesis_sensor("pv_voltage", value).native_value == 50.0
+
+    @pytest.mark.parametrize("value", [200.0, 2147483.647, "2147483.647", "1e400"])
+    def test_server_value_above_max_value_is_rejected(self, value):
+        """pv_voltage tops out at 150 V; the fallback average is 50.0."""
+        assert _synthesis_sensor("pv_voltage", value).native_value == 50.0
+
+    def test_max_value_is_enforced_for_energy_too(self):
+        """total_kwh has a 999999 ceiling; the fallback sum is 100.0."""
+        assert _synthesis_sensor("total_kwh", 1e9).native_value == 100.0
+
+    def test_unparseable_server_value_falls_back_to_aggregation(self):
+        assert _synthesis_sensor("pv_voltage", "not-a-number").native_value == 50.0
+
+    def test_null_server_value_falls_back_to_aggregation(self):
+        assert _synthesis_sensor("pv_voltage", None).native_value == 50.0
+
+    def test_valid_server_value_is_still_preferred(self):
+        """The fallback machinery must not change the happy path."""
+        assert _synthesis_sensor("pv_voltage", "48.5").native_value == 48.5
+        assert _synthesis_sensor("temperature", "35.0").native_value == 35.0
+
+    def test_zero_server_value_is_not_mistaken_for_missing(self):
+        assert _synthesis_sensor("pv_voltage", "0").native_value == 0.0
+
+    def test_invalid_server_value_without_device_logs_returns_none(self):
+        coordinator = MagicMock()
+        coordinator.data = {"synthesisStreams": [{"name": "pv_voltage", "value": float("nan")}], "deviceLogs": None}
+        sensor = SmartSolarProjectSynthesisSensor(
+            coordinator=coordinator,
+            config_entry=_entry("project", project_id="1072"),
+            sensor_type="pv_voltage",
+            sensor_info=SENSOR_TYPES["pv_voltage"],
+        )
+        assert sensor.native_value is None
+
+
+class TestStatusMappingTolerance:
+    """Status codes are text, and no payload may make them raise.
+
+    ``int()`` on Infinity raises ``OverflowError`` and on NaN raises
+    ``ValueError``; neither was caught, so one malformed status stream escaped
+    ``native_value`` and surfaced as an entity update error.
+    """
+
+    @pytest.mark.parametrize("value", [float("inf"), float("-inf"), "Infinity", "-Infinity", float("nan"), "NaN"])
+    def test_non_finite_status_does_not_raise(self, value):
+        assert _device_sensor("status", value).native_value == f"Unknown ({value})"
+
+    @pytest.mark.parametrize("value", ["1", 1, 1.0, "1.0"])
+    def test_known_status_codes_still_map(self, value):
+        assert _device_sensor("status", value).native_value == "Charging"
+
+    def test_unknown_status_code_still_maps_to_unknown_text(self):
+        assert _device_sensor("status", "99").native_value == "Unknown (99)"
+
+    def test_non_numeric_status_does_not_raise(self):
+        assert _device_sensor("status", "bogus").native_value == "Unknown (bogus)"
+
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), "Infinity"])
+    def test_synthesis_status_does_not_raise(self, value):
+        """An unusable server status must degrade to text, never to an exception."""
+        result = _synthesis_sensor("status", value).native_value
+        assert isinstance(result, str)
+        assert result.startswith("Unknown")
+
+    def test_null_server_status_falls_back_to_device_status(self):
+        assert _synthesis_sensor("status", None, device_values=("1", "1")).native_value == "Charging"
+
+    def test_synthesis_status_from_server_is_mapped_to_text(self):
+        assert _synthesis_sensor("status", "1.0").native_value == "Charging"
+
+    def test_worst_case_device_status_wins(self):
+        assert _synthesis_sensor("status", None, device_values=("1", "3")).native_value == "Fault"

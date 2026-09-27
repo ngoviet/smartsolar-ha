@@ -72,12 +72,19 @@ def live_signal_quality(env: dict[str, str]) -> dict[str, int]:
         )
         with urllib.request.urlopen(request, timeout=30) as response:
             payload = json.loads(response.read())
+        # `deviceLogs` is third-party JSON: iterating it directly crashed the
+        # verifier with a TypeError (instead of reporting SKIP) whenever the
+        # cloud answered "deviceLogs": null, which the integration itself
+        # already treats as "no device logs".
+        logs = payload.get("deviceLogs")
+        if not isinstance(logs, list):
+            return {}
         return {
             str(log["deviceGuid"]): log["signalQuality"]
-            for log in payload.get("deviceLogs", [])
-            if log.get("signalQuality") is not None
+            for log in logs
+            if isinstance(log, dict) and log.get("signalQuality") is not None and log.get("deviceGuid") is not None
         }
-    except urllib.error.URLError, KeyError, ValueError, TimeoutError:
+    except urllib.error.URLError, KeyError, TypeError, ValueError, TimeoutError:
         return {}
 
 

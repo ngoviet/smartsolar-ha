@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock
 
@@ -160,6 +161,110 @@ class TestAsyncUpdateData:
         await coordinator._async_update_data()
         assert "547611" in coordinator.discovered_devices
         assert "14756976" in coordinator.discovered_devices
+
+    @pytest.mark.asyncio
+    async def test_removed_device_stops_being_tracked(self, mock_hass, mock_api, mock_config_entry):
+        """discovered_devices mirrors the current response, it is not a union.
+
+        Growing the set forever kept accepting a device removed from the
+        project, so its cached MQTT payload re-created a deviceLogs entry (and
+        was summed into the project totals) on every later poll, forever.
+        """
+        mock_config_entry.data = {"device_type": 2, "mode": "project", "project_id": "1072"}
+        coordinator = SmartSolarDataUpdateCoordinator(hass=mock_hass, api=mock_api, entry=mock_config_entry)
+        await coordinator._async_update_data()
+        assert coordinator.discovered_devices == {"547611", "14756976"}
+
+        # The server stops reporting the second charger.
+        mock_api.get_project_metrics = AsyncMock(
+            return_value={
+                "synthesisStreams": [],
+                "deviceLogs": [{"deviceGuid": "547611", "dataStreams": [{"name": "charge_power", "value": "100"}]}],
+            }
+        )
+        await coordinator._async_update_data()
+
+        assert coordinator.discovered_devices == {"547611"}
+        assert coordinator._is_tracked_device("547611") is True
+        assert coordinator._is_tracked_device("14756976") is False
+
+    @pytest.mark.asyncio
+    async def test_removed_device_is_not_resurrected_from_mqtt_cache(self, mock_hass, mock_api, mock_config_entry):
+        """A stale MQTT payload must not re-add a device the project dropped."""
+        mock_config_entry.data = {"device_type": 2, "mode": "project", "project_id": "1072"}
+        coordinator = SmartSolarDataUpdateCoordinator(hass=mock_hass, api=mock_api, entry=mock_config_entry)
+        coordinator.data = deepcopy(mock_api.get_project_metrics.return_value)
+        # Simulate the earlier poll that discovered both chargers.
+        coordinator.discovered_devices = {"547611", "14756976"}
+        await coordinator.async_process_mqtt_data("14756976", {"charge_power": 497.0})
+        assert coordinator.mqtt_cached_device_count == 1
+
+        # The device leaves the project; its last MQTT payload is still cached.
+        mock_api.get_project_metrics = AsyncMock(
+            return_value={
+                "synthesisStreams": [],
+                "deviceLogs": [{"deviceGuid": "547611", "dataStreams": [{"name": "charge_power", "value": "100"}]}],
+            }
+        )
+        data = await coordinator._async_update_data()
+
+        assert coordinator.device_guids(data) == ["547611"]
+
+
+class TestDeviceModeTracksOneDevice:
+    """Device mode has entities for one charger and one shared lastMessage.
+
+    Accepting a stray second chipset id meant that device's MQTT readings were
+    merged into the same ``lastMessage.dataStreams`` the first charger's sensors
+    read — i.e. the wrong device's values were published.
+    """
+
+    @pytest.mark.asyncio
+    async def test_only_the_first_chipset_id_is_tracked(self, mock_hass, mock_api, mock_config_entry_device):
+        mock_config_entry_device.data = {
+            **mock_config_entry_device.data,
+            "chipset_ids": ["547611", "14756976"],
+        }
+        coordinator = SmartSolarDataUpdateCoordinator(
+            hass=mock_hass,
+            api=mock_api,
+            entry=mock_config_entry_device,
+        )
+
+        assert coordinator._is_tracked_device("547611") is True
+        assert coordinator._is_tracked_device("14756976") is False
+
+    @pytest.mark.asyncio
+    async def test_extra_device_mqtt_is_rejected(self, mock_hass, mock_api, mock_config_entry_device):
+        mock_config_entry_device.data = {
+            **mock_config_entry_device.data,
+            "chipset_ids": ["547611", "14756976"],
+        }
+        coordinator = SmartSolarDataUpdateCoordinator(
+            hass=mock_hass,
+            api=mock_api,
+            entry=mock_config_entry_device,
+        )
+        coordinator.data = deepcopy(SAMPLE_DEVICE_RESPONSE)
+
+        await coordinator.async_process_mqtt_data("14756976", {"charge_power": 999.0})
+
+        assert coordinator.mqtt_cached_device_count == 0
+        streams = {s["name"]: s["value"] for s in coordinator.data["lastMessage"]["dataStreams"]}
+        assert streams["charge_power"] != "999.0"
+
+    @pytest.mark.asyncio
+    async def test_project_mode_still_tracks_every_chipset_id(self, mock_hass, mock_api, mock_config_entry):
+        """The single-device rule must not leak into project mode."""
+        mock_config_entry.data = {
+            **mock_config_entry.data,
+            "mode": "project",
+            "chipset_ids": ["547611", "14756976"],
+        }
+        coordinator = SmartSolarDataUpdateCoordinator(hass=mock_hass, api=mock_api, entry=mock_config_entry)
+
+        assert coordinator._is_tracked_device("547611") is True
+        assert coordinator._is_tracked_device("14756976") is True
 
 
 class TestDeviceGuidOrdering:

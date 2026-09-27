@@ -4,7 +4,7 @@
 [![GitHub release](https://img.shields.io/github/release/ngoviet/smartsolar-ha.svg)](https://github.com/ngoviet/smartsolar-ha/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![HA Version](https://img.shields.io/badge/Home%20Assistant-2026.9%2B-41BDF5)](https://www.home-assistant.io)
-[![Tests](https://img.shields.io/badge/tests-366%20passed-brightgreen)](https://github.com/ngoviet/smartsolar-ha)
+[![Tests](https://img.shields.io/badge/tests-551%20passed-brightgreen)](https://github.com/ngoviet/smartsolar-ha)
 [![Python](https://img.shields.io/badge/python-3.14%2B-blue)](https://www.python.org)
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ngoviet&repository=smartsolar-ha&category=integration)
@@ -119,6 +119,85 @@ SmartSolarDataUpdateCoordinator
 ```
 
 ## Changelog
+
+### v2.0.1 — audit release
+
+No configuration change: this release only fixes behaviour, so an existing
+`smartsolar_ha` entry keeps working.
+
+**Correctness fixes:**
+
+- **Live MQTT data is no longer hidden during a cloud outage.** When the HTTP
+  poll failed, every entity reported `unavailable` even though real-time values
+  were still arriving over MQTT (and being computed) — so those readings were
+  discarded by Home Assistant and punched a hole in the recorder. A sensor is now
+  available when either path can feed it. The `Update Frequency` control stays
+  available too: it is a local setting, and it used to disappear exactly when you
+  might want to slow the polling down.
+- **Device mode publishes the right charger's data.** Device mode monitors one
+  controller, but entering several Chipset IDs was accepted and then only the
+  first was used — while the extra ID still passed the MQTT filter, and device
+  mode merges every accepted device into a single stream set. The second
+  charger's readings could therefore appear on the first charger's sensors. The
+  config flow now refuses more than one ID in device mode (with a clear message),
+  and an entry that already contains extras can no longer show wrong data.
+- **Legacy metric names arriving inside MQTT `dataStreams` are no longer
+  dropped.** Firmware that publishes `charging_power` / `yield_today` /
+  `yield_total` inside `dataStreams` had all of those values filed under names no
+  sensor reads; the field mapping is now applied there too.
+- **Synthesis values are validated like every other reading.** The project
+  "Total" sensors read the cloud's `synthesisStreams` without the guards the
+  per-device path had, so NaN/Infinity could become a state (poisoning long-term
+  statistics) and the per-sensor ceiling was skipped. A value that fails
+  validation now falls back to the local per-device aggregation.
+- **A malformed status code can no longer break an entity update.**
+  `int(float("inf"))` raises `OverflowError`, which was not caught — one bad
+  status stream turned into an error instead of an `Unknown (…)` state.
+- **MQTT reconnects at a sane pace.** A broker that closed the subscription
+  cleanly used to send the client straight back into connect with no delay, and
+  cancelling the client during the reconnect wait left diagnostics reporting a
+  live connection.
+- **A failed setup cleans up after itself.** If a platform failed to load, the
+  poll timer, midnight listener, HTTP session and MQTT task survived and Home
+  Assistant's automatic setup retry added another poll timer each time.
+- **Unloading is all-or-nothing.** Platforms are now unloaded before anything is
+  torn down, so a refused unload no longer leaves an entry that is still loaded
+  but with real-time updates and polling permanently stopped.
+- **The `refresh_token` service is removed when the last entry is unloaded**, and
+  it no longer lingers in the service registry.
+- **The reauth and reconfigure dialogs are translated** (they previously rendered
+  raw field keys), and both now reject blank or wrong credentials *before*
+  writing them — reconfiguring with an empty password used to silently break a
+  working entry.
+- **Migration is safe for old entries**: a legacy scalar or comma-separated string
+  `chipset_ids` used to abort the migration or turn `"547611,14756976"` into one
+  entry per character.
+- **A corrupt `update_interval` cannot create a polling storm** — the value is
+  clamped to the same 1–30 s range the `Update Frequency` entity enforces.
+- Also fixed: NaN/Infinity no longer reach the interval entity, a device removed
+  from a project can no longer be resurrected from cached MQTT data, the deploy
+  script prunes files that no longer exist in the repository, and `"deviceLogs":
+  null` no longer crashes `verify_live.py`.
+
+**Documentation corrections** (claims that were never true in this repository):
+
+- `allow_multiple_instances` (listed as a v1.3.0 feature) is **not** a Home
+  Assistant config-flow attribute. It was dead code and has been removed; multiple
+  entries are allowed simply because the manifest does not set
+  `single_config_entry`.
+- The sensors inherit `RestoreEntity`, but they do **not** restore a stale value:
+  a sensor shows `unknown` until the first successful poll (or MQTT message),
+  because a restored reading could be arbitrarily old. Only the `Update Frequency`
+  entity restores its own last value.
+
+**Tooling:**
+
+- **551 tests** (was 366). Every fix above has a regression test, and each of
+  those tests was verified to fail before the fix.
+- The declared tool versions can now actually run the gate: `ruff>=0.4` could not
+  parse this repository's `pyproject.toml` at all, `mypy>=1.9` reported errors the
+  pinned `mypy` accepts, and the pre-commit `ruff` pin (`v0.4.0`) failed on every
+  commit.
 
 ### v2.0.0 — domain rename + audit fixes
 

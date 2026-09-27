@@ -112,11 +112,32 @@ class TestUpdateIntervalNumber:
         self.coordinator.async_refresh.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_set_native_value_truncates_floats(self):
-        """Float values are truncated to int (step=1)."""
+    @pytest.mark.parametrize(("value", "expected"), [(10.7, 11), (10.4, 10), (1.6, 2), (29.5, 30)])
+    async def test_set_native_value_rounds_floats(self, value, expected):
+        """Fractional values are rounded, not truncated.
+
+        Home Assistant's number.set_value service coerces to float and checks
+        min/max but does NOT enforce native_step, so a fractional value really
+        arrives. ``int(10.7) == 10`` used to change the requested interval
+        silently.
+        """
         entity = self._make_number()
-        await entity.async_set_native_value(10.7)
-        assert self.coordinator.update_interval == timedelta(seconds=10)
+        await entity.async_set_native_value(value)
+        assert self.coordinator.update_interval == timedelta(seconds=expected)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+    async def test_non_finite_value_does_not_raise(self, value):
+        """NaN passes HA's min/max check (every NaN comparison is False).
+
+        ``round()``/``int()`` on NaN raises ValueError and on Infinity raises
+        OverflowError, so without the coerce_float guard this escaped
+        ``async_set_native_value`` entirely.
+        """
+        entity = self._make_number()
+        await entity.async_set_native_value(value)
+        assert self.coordinator.update_interval == timedelta(seconds=5)
+        self.hass.config_entries.async_update_entry.assert_not_called()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("value", [0.0, -1.0, 31.0, 1000.0])
@@ -157,6 +178,24 @@ class TestUpdateIntervalNumber:
     @pytest.mark.parametrize("restored", ["unavailable", "unknown", "0", "99", "abc", ""])
     async def test_ignores_unusable_restored_state(self, restored):
         """Junk or out-of-range restored state leaves the interval alone."""
+        self.coordinator.update_interval = timedelta(seconds=5)
+        entity = self._make_number()
+        last_state = MagicMock()
+        last_state.state = restored
+        entity.async_get_last_state = AsyncMock(return_value=last_state)
+
+        await entity.async_added_to_hass()
+
+        assert self.coordinator.update_interval == timedelta(seconds=5)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("restored", ["inf", "-inf", "nan", "Infinity"])
+    async def test_non_finite_restored_state_does_not_raise(self, restored):
+        """``int(float("inf"))`` raises OverflowError, which was not caught.
+
+        The old handler only covered ``ValueError``/``TypeError``, so a
+        non-finite restored state aborted the entity being added.
+        """
         self.coordinator.update_interval = timedelta(seconds=5)
         entity = self._make_number()
         last_state = MagicMock()

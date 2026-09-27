@@ -20,6 +20,7 @@ from .const import (
     build_device_info,
 )
 from .coordinator import SmartSolarDataUpdateCoordinator
+from .helpers import coerce_float
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,17 +77,31 @@ class UpdateIntervalNumber(CoordinatorEntity, RestoreEntity, NumberEntity):
         last_state = await self.async_get_last_state()
         if last_state is None:
             return
-        try:
-            restored = int(float(last_state.state))
-        except ValueError, TypeError:
+        # ``coerce_float`` also rejects the non-finite states a corrupted
+        # recorder row can hold: ``int(float("inf"))`` raises OverflowError,
+        # which the old ``except (ValueError, TypeError)`` did not catch, so a
+        # bad restored state aborted the entity being added.
+        restored = coerce_float(last_state.state)
+        if restored is None:
             return
-        if not MIN_UPDATE_INTERVAL <= restored <= MAX_UPDATE_INTERVAL:
+        new_seconds = round(restored)
+        if not MIN_UPDATE_INTERVAL <= new_seconds <= MAX_UPDATE_INTERVAL:
             return
-        if self.coordinator.update_interval == timedelta(seconds=restored):
+        if self.coordinator.update_interval == timedelta(seconds=new_seconds):
             return
 
-        _LOGGER.debug("Restoring update interval to %s seconds", restored)
-        self.coordinator.update_interval = timedelta(seconds=restored)
+        _LOGGER.debug("Restoring update interval to %s seconds", new_seconds)
+        self.coordinator.update_interval = timedelta(seconds=new_seconds)
+
+    @property
+    def available(self) -> bool:
+        """Always available: this is a local setting, not cloud data.
+
+        Inheriting ``CoordinatorEntity.available`` meant a failed HTTP poll made
+        the update-interval control disappear, so the one thing a user might want
+        to change *because* of an outage could not be changed.
+        """
+        return True
 
     @property
     def native_value(self) -> float | None:
@@ -97,7 +112,18 @@ class UpdateIntervalNumber(CoordinatorEntity, RestoreEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Set new update interval."""
-        new_seconds = int(value)
+        # Home Assistant's number.set_value service only coerces to float and
+        # checks min/max — it does NOT enforce native_step — and NaN passes that
+        # range check because every NaN comparison is False. ``coerce_float``
+        # rejects NaN/Infinity/text first, so the rounding below cannot raise.
+        seconds = coerce_float(value)
+        if seconds is None:
+            _LOGGER.warning("Rejecting non-numeric update interval %r", value)
+            return
+
+        # Truncating silently changed the request (int(4.9) == 4); round to the
+        # nearest whole second, which is what a step of 1 s promises.
+        new_seconds = round(seconds)
         if not MIN_UPDATE_INTERVAL <= new_seconds <= MAX_UPDATE_INTERVAL:
             _LOGGER.warning(
                 "Rejecting update interval %s (allowed %s-%s seconds)",

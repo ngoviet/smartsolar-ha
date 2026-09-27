@@ -43,6 +43,22 @@
         "data": {
           "manh_quan_ids": "Danh sách Chipset ID (cách nhau bằng dấu phẩy)"
         }
+      },
+      "reauth": {
+        "title": "Phiên đăng nhập SmartSolar đã hết hạn",
+        "description": "Nhập lại tên đăng nhập và mật khẩu cho tài khoản SmartSolar này",
+        "data": {
+          "username": "Tên đăng nhập",
+          "password": "Mật khẩu"
+        }
+      },
+      "reconfigure": {
+        "title": "Cấu hình lại SmartSolar MPPT",
+        "description": "Cập nhật thông tin đăng nhập SmartSolar cho tích hợp này",
+        "data": {
+          "username": "Tên đăng nhập",
+          "password": "Mật khẩu"
+        }
       }
     },
     "error": {
@@ -53,6 +69,7 @@
       "password_required": "Vui lòng nhập mật khẩu",
       "chipset_ids_required": "Vui lòng nhập ChipsetId",
       "chipset_ids_invalid": "ChipsetId không hợp lệ",
+      "single_chipset_id_required": "Chế độ thiết bị chỉ đọc một bộ sạc — vui lòng nhập một ChipsetId duy nhất",
       "device_not_found": "Không tìm thấy thiết bị với ChipsetId này",
       "manh_quan_ids_required": "Vui lòng nhập ID cho Sạc MPPT Mạnh Quân",
       "at_least_one_device_required": "Vui lòng chọn ít nhất một loại thiết bị",
@@ -67,7 +84,8 @@
       "already_configured": "Tích hợp này đã được cấu hình",
       "already_in_progress": "Đang cấu hình tích hợp này",
       "reauth_successful": "Xác thực lại thành công",
-      "reconfigure_successful": "Cập nhật cấu hình thành công"
+      "reconfigure_successful": "Cập nhật cấu hình thành công",
+      "unknown_entry": "Mục cấu hình của tích hợp này không còn tồn tại"
     }
   },
   "entity": {

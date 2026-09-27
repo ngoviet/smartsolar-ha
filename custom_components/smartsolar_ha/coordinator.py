@@ -187,6 +187,26 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return how many devices have live MQTT data buffered."""
         return len(self._mqtt_data)
 
+    def has_live_mqtt_data(self, device_guid: str | None = None) -> bool:
+        """Return whether buffered MQTT data can feed an entity.
+
+        Entities use this to stay *available* when the HTTP poll fails while MQTT
+        keeps delivering: the REST value is stale in that case but the entity's
+        ``native_value`` is still a live reading, and reporting ``unavailable``
+        would throw away the very data the real-time path exists to provide (and
+        punch a hole in the recorder/statistics).
+
+        ``device_guid=None`` asks about the whole entry, which is what the
+        project synthesis sensors need.
+        """
+        if self.data is None:
+            # No poll has ever succeeded, so MQTT data has not been merged into
+            # anything an entity can read yet.
+            return False
+        if device_guid is None:
+            return bool(self._mqtt_data)
+        return str(device_guid) in self._mqtt_data
+
     async def async_process_mqtt_data(self, device_guid: str, data: dict[str, Any]) -> None:
         """Process incoming MQTT data for a device.
 
@@ -225,10 +245,18 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _is_tracked_device(self, device_guid: str) -> bool:
         """Return whether a device GUID belongs to this config entry."""
-        if str(device_guid) in self.discovered_devices:
+        guid = str(device_guid)
+        if guid in self.discovered_devices:
             return True
-        chipset_ids = self.entry.data.get("chipset_ids") or []
-        return str(device_guid) in {str(cid) for cid in chipset_ids}
+        chipset_ids = [str(cid) for cid in (self.entry.data.get("chipset_ids") or [])]
+        if self.entry.data.get("mode") == MODE_DEVICE:
+            # Device mode has entities for exactly one device, and it merges every
+            # accepted device into a single ``lastMessage.dataStreams``. Accepting
+            # a stray extra chipset id therefore published *that* device's readings
+            # on this device's sensors. The config flow now refuses multiple ids;
+            # this keeps an entry that already has them from showing wrong data.
+            return bool(chipset_ids) and guid == chipset_ids[0]
+        return guid in set(chipset_ids)
 
     @staticmethod
     def device_guids(data: dict[str, Any]) -> list[str]:
@@ -391,7 +419,14 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 new_devices = current_devices - self.discovered_devices
                 if new_devices:
                     _LOGGER.info("New devices discovered: %s", sorted(new_devices))
-                    self.discovered_devices.update(new_devices)
+                # REPLACE, do not union. This set is the "does this device belong
+                # to us?" guard for a broker shared with every SmartSolar
+                # customer, and it is also what lets a cached MQTT payload be
+                # merged back into the response. Growing it forever meant a
+                # device removed from the project kept being accepted, so its
+                # last MQTT values re-created a phantom deviceLogs entry (and
+                # were summed into the project totals) on every poll, forever.
+                self.discovered_devices = current_devices
 
             # Add metadata to the data
             data["_mode"] = mode
