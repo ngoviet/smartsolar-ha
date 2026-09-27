@@ -14,11 +14,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from homeassistant.data_entry_flow import AbortFlow
 
-from custom_components.smartsolar_mppt.api import (
+from custom_components.smartsolar_ha.api import (
     SmartSolarAPIError,
     SmartSolarAuthenticationError,
 )
-from custom_components.smartsolar_mppt.config_flow import SmartSolarConfigFlow
+from custom_components.smartsolar_ha.config_flow import SmartSolarConfigFlow
 
 STEP_RESULT = {"type": "form", "step_id": "test", "errors": {}}
 
@@ -68,7 +68,7 @@ class _FakeAPIContext:
         self.instance = MagicMock()
 
     def __enter__(self):
-        from custom_components.smartsolar_mppt import config_flow
+        from custom_components.smartsolar_ha import config_flow
 
         for name, value in self._methods.items():
             setattr(self.instance, name, value)
@@ -78,7 +78,7 @@ class _FakeAPIContext:
         return self.instance
 
     def __exit__(self, *exc):
-        from custom_components.smartsolar_mppt import config_flow
+        from custom_components.smartsolar_ha import config_flow
 
         config_flow.SmartSolarAPI = self._original  # type: ignore[assignment]
         return False
@@ -423,7 +423,7 @@ class TestReconfigureAndReauth:
 def _load_translation_section(section: str) -> dict[str, str]:
     import json
 
-    with open("custom_components/smartsolar_mppt/translations/en.json") as f:
+    with open("custom_components/smartsolar_ha/translations/en.json") as f:
         return json.load(f)["config"][section]
 
 

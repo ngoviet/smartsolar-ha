@@ -11,6 +11,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import device_registry as dr
 
 from .api import SmartSolarAPI, SmartSolarAPIError
@@ -191,13 +192,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         **device_info,
     )
 
-    # Register services
+    # Register services. Re-registering the same service name simply replaces
+    # the handler, so a second config entry is harmless.
     async def async_refresh_token(service: ServiceCall) -> None:
         """Service to manually refresh API token."""
-        coordinator = hass.data[DOMAIN].get(service.data.get("entry_id"))
-        if coordinator:
-            await coordinator.api.refresh_token_if_needed()
-            await coordinator.async_request_refresh()
+        entry_id = service.data["entry_id"]
+        coordinator: SmartSolarDataUpdateCoordinator | None = hass.data[DOMAIN].get(entry_id)
+        if coordinator is None:
+            # Silently doing nothing used to look like a successful refresh.
+            raise ServiceValidationError(f"Unknown SmartSolar HA config entry: {entry_id}")
+        await coordinator.api.refresh_token_if_needed()
+        await coordinator.async_request_refresh()
 
     hass.services.async_register(
         DOMAIN,
@@ -205,7 +210,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async_refresh_token,
         schema=vol.Schema(
             {
-                "entry_id": str,
+                # Required: without it the handler had no entry to act on and
+                # every call was a silent no-op.
+                vol.Required("entry_id"): str,
             }
         ),
     )

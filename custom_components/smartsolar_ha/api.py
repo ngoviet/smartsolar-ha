@@ -27,6 +27,10 @@ _LOGGER = logging.getLogger(__name__)
 # Token lifetime used when the API does not report an expiry.
 DEFAULT_TOKEN_LIFETIME = timedelta(days=30)
 
+# Statuses below 500 that are still worth retrying: the server is asking the
+# client to come back later rather than reporting a permanent failure.
+RETRYABLE_STATUSES = frozenset({408, 429})
+
 
 class SmartSolarAPIError(Exception):
     """Exception raised for SmartSolar API errors."""
@@ -78,6 +82,27 @@ class _BufferedResponse:
         return json.loads(self._body.decode("utf-8"))
 
 
+async def _json_object(response: Any, context: str) -> dict[str, Any]:
+    """Decode a response body that is expected to be a JSON object.
+
+    ``ClientResponse.json()`` is typed ``Any``: an unexpected or truncated
+    payload (a bare list, a plain string, invalid JSON) used to escape this
+    module as ``AttributeError: 'list' object has no attribute 'get'`` from
+    deep inside a caller, which no handler classified. Normalize every such
+    case into :class:`SmartSolarAPIError` instead.
+
+    ``aiohttp.ClientError`` (wrong content type, dropped connection) is left to
+    propagate so callers keep classifying it as a connection failure.
+    """
+    try:
+        payload = await response.json()
+    except ValueError as err:  # json.JSONDecodeError
+        raise SmartSolarAPIError(f"{context}: response body is not valid JSON: {err}") from err
+    if not isinstance(payload, dict):
+        raise SmartSolarAPIError(f"{context}: expected a JSON object, got {type(payload).__name__}")
+    return payload
+
+
 def _parse_expiration(expiration_str: Any) -> datetime | None:
     """Parse the API ``expiration`` field into a timezone-aware datetime.
 
@@ -93,7 +118,7 @@ def _parse_expiration(expiration_str: Any) -> datetime | None:
         value = f"{value[:-1]}+00:00"
     try:
         parsed = datetime.fromisoformat(value)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=dt_util.UTC)
@@ -145,7 +170,7 @@ class SmartSolarAPI:
                 headers={"Content-Type": "application/json"},
             ) as response:
                 if response.status == 200:
-                    payload: dict[str, Any] = await response.json()
+                    payload = await _json_object(response, "Login")
                     self._token = payload.get("token")
                     if not self._token:
                         raise SmartSolarAPIError("Login succeeded but no token was returned")
@@ -180,9 +205,10 @@ class SmartSolarAPI:
     ) -> _BufferedResponse:
         """Make an HTTP request with exponential backoff retry.
 
-        Retries transient failures only: aiohttp/timeout errors and 5xx server
-        responses. Auth failures (401) and not-found (404) are returned to the
-        caller immediately so error handling stays fast.
+        Retries transient failures only: aiohttp/timeout errors, 5xx server
+        responses, and the two "try again later" statuses (408 request timeout,
+        429 rate limited). Auth failures (401) and not-found (404) are returned
+        to the caller immediately so error handling stays fast.
 
         The returned response is **already read and released** — this method
         always buffers the body so a retry cannot reuse a consumed response.
@@ -192,8 +218,9 @@ class SmartSolarAPI:
             try:
                 session = await self._get_session()
                 async with session.request(method, url, **kwargs) as response:
-                    # Don't retry auth failures or not-found — fail fast
-                    if response.status in (401, 404) or response.status < 500:
+                    # Fail fast on auth/not-found and on any other non-retryable
+                    # status; retry 5xx plus 408/429.
+                    if response.status < 500 and response.status not in RETRYABLE_STATUSES:
                         # Read the body while the connection is still open.
                         return _BufferedResponse(response.status, await response.read())
                     last_exception = SmartSolarAPIError(
@@ -240,11 +267,18 @@ class SmartSolarAPI:
         response = await self._request_with_retry("GET", url, headers=headers, params=params)
 
         if response.status == 200:
-            payload: dict[str, Any] = await response.json()
-            return payload
+            return await _json_object(response, f"GET {url}")
         if response.status == 404:
             raise SmartSolarNotFoundError(f"Not found: {url}", 404)
         if response.status == 401:
+            # The server rejected the token: drop it so the next call logs in
+            # again. ``refresh_token_if_needed()`` only re-authenticates when
+            # the cached expiry is near, and the API hands out ~30-day tokens —
+            # keeping the stale one meant every later poll failed with 401 until
+            # Home Assistant was restarted.
+            _LOGGER.warning("API rejected the cached token for %s — will log in again", url)
+            self._token = None
+            self._token_expiry = None
             raise SmartSolarAuthenticationError("Token rejected by API (401)", 401)
 
         error_text = await response.text()

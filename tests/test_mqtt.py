@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from copy import deepcopy
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.smartsolar_mppt.const import MQTT_FIELD_MAPPING
-from custom_components.smartsolar_mppt.mqtt_client import (
+from custom_components.smartsolar_ha.const import MQTT_FIELD_MAPPING
+from custom_components.smartsolar_ha.mqtt_client import (
     HAS_AIOMQTT,
     SmartSolarMQTTClient,
 )
@@ -361,7 +362,9 @@ class TestCoordinatorMQTTIntegration:
         """MQTT data patches coordinator.data in-place."""
         from tests.conftest import SAMPLE_PROJECT_RESPONSE
 
-        mock_coordinator.data = SAMPLE_PROJECT_RESPONSE.copy()
+        # deepcopy, not copy(): the merge rewrites nested deviceLogs entries,
+        # which a shallow copy would share with the module-level constant.
+        mock_coordinator.data = deepcopy(SAMPLE_PROJECT_RESPONSE)
         await mock_coordinator.async_process_mqtt_data("547611", {"pv_voltage": 99.9})
         # Check that device 547611 was updated in coordinator.data
         for log in mock_coordinator.data["deviceLogs"]:
@@ -377,3 +380,67 @@ class TestCoordinatorMQTTIntegration:
         mock_client = MagicMock()
         mock_coordinator.set_mqtt_client(mock_client)
         assert mock_coordinator._mqtt_client is mock_client
+
+
+class TestConnectionState:
+    """`connected` must reflect reality after the loop ends or stop() runs.
+
+    It used to stay True after a cancelled/ended message loop, so diagnostics
+    reported a live MQTT connection that no longer existed.
+    """
+
+    def _make_client(self):
+        return SmartSolarMQTTClient(
+            device_guids=["547611"],
+            on_data_callback=AsyncMock(),
+            username="web_app",
+            password="cGFzcw==",
+        )
+
+    @pytest.mark.asyncio
+    async def test_stop_clears_connected(self):
+        client = self._make_client()
+        client._connected = True
+        client._running = True
+
+        await client.stop()
+
+        assert client.connected is False
+        assert client.is_running() is False
+
+    @pytest.mark.asyncio
+    async def test_message_loop_clears_state_on_exit(self):
+        """On exit the broker connection is gone, whatever ended the loop."""
+        client = self._make_client()
+        client._running = True
+
+        async def fake_connect_and_listen(inner_self) -> None:
+            inner_self._connected = True
+            inner_self._running = False  # ask the loop to exit
+
+        # Patched on the class: the client uses __slots__, so the bound method
+        # cannot be replaced on the instance.
+        with patch.object(SmartSolarMQTTClient, "_connect_and_listen", fake_connect_and_listen):
+            await client._message_loop()
+
+        assert client.connected is False
+        assert client._client is None
+
+    @pytest.mark.asyncio
+    async def test_message_loop_clears_state_after_failure(self):
+        """A failing connection attempt must not leave connected=True."""
+        client = self._make_client()
+        client._running = True
+
+        async def failing_connect(inner_self) -> None:
+            inner_self._connected = True
+            inner_self._running = False
+            raise OSError("broker unreachable")
+
+        with (
+            patch.object(SmartSolarMQTTClient, "_connect_and_listen", failing_connect),
+            patch("custom_components.smartsolar_ha.mqtt_client.asyncio.sleep", new=AsyncMock()),
+        ):
+            await client._message_loop()
+
+        assert client.connected is False

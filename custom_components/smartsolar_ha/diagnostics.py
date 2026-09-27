@@ -8,6 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
+from .helpers import as_list, device_logs
 
 # Credential-ish keys that must never leave the instance.
 _REDACTED_KEYS = frozenset({"password", "token", "mqtt_password"})
@@ -58,8 +59,8 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
             "device_type": api_data.get("_device_type"),
             "chipset_ids": api_data.get("_chipset_ids"),
             "has_synthesis_streams": "synthesisStreams" in api_data,
-            "device_count": len(api_data.get("deviceLogs", []) or []),
-            "sensor_count": len(api_data.get("synthesisStreams", []) or []),
+            "device_count": len(device_logs(api_data)),
+            "sensor_count": len(as_list(api_data.get("synthesisStreams"))),
         }
 
     return data

@@ -78,7 +78,7 @@ class UpdateIntervalNumber(CoordinatorEntity, RestoreEntity, NumberEntity):
             return
         try:
             restored = int(float(last_state.state))
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             return
         if not MIN_UPDATE_INTERVAL <= restored <= MAX_UPDATE_INTERVAL:
             return

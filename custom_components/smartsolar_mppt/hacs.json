@@ -1,8 +1,0 @@
-{
-  "name": "SmartSolar HA",
-  "content_in_root": false,
-  "filename": "smartsolar_mppt",
-  "country": ["VN"],
-  "homeassistant": "2026.9.0",
-  "render_readme": true
-}

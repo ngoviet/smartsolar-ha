@@ -18,7 +18,7 @@ jobs:
       - name: Validate manifest version matches tag
         run: |
           TAG=${GITHUB_REF#refs/tags/v}
-          MANIFEST_VER=$(python -c "import json; print(json.load(open('custom_components/smartsolar_mppt/manifest.json'))['version'])")
+          MANIFEST_VER=$(python -c "import json; print(json.load(open('custom_components/smartsolar_ha/manifest.json'))['version'])")
           if [ "$TAG" != "$MANIFEST_VER" ]; then
             echo "Tag version v$TAG does not match manifest version $MANIFEST_VER"
             exit 1

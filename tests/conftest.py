@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -114,14 +115,19 @@ EXPECTED_MQTT_NORMALIZED = {
 
 @pytest.fixture
 def sample_device_response():
-    """Return a sample device mode API response."""
-    return SAMPLE_DEVICE_RESPONSE.copy()
+    """Return a sample device mode API response.
+
+    Deep-copied: the coordinator merges MQTT data into the payload **in place**,
+    so a shallow copy let one test rewrite the module-level constant for every
+    later test in the session.
+    """
+    return deepcopy(SAMPLE_DEVICE_RESPONSE)
 
 
 @pytest.fixture
 def sample_project_response():
-    """Return a sample project mode API response."""
-    return SAMPLE_PROJECT_RESPONSE.copy()
+    """Return a sample project mode API response (deep copy, see above)."""
+    return deepcopy(SAMPLE_PROJECT_RESPONSE)
 
 
 @pytest.fixture
@@ -141,7 +147,7 @@ def mock_config_entry():
     """Create a mock ConfigEntry for project mode."""
     entry = MagicMock()
     entry.entry_id = "test_entry_12345"
-    entry.domain = "smartsolar_mppt"
+    entry.domain = "smartsolar_ha"
     entry.title = "SmartSolar MPPT (Project)"
     entry.version = 1
     entry.minor_version = 1
@@ -161,7 +167,7 @@ def mock_config_entry_device():
     """Create a mock ConfigEntry for device mode."""
     entry = MagicMock()
     entry.entry_id = "test_entry_device"
-    entry.domain = "smartsolar_mppt"
+    entry.domain = "smartsolar_ha"
     entry.title = "SmartSolar MPPT (Device)"
     entry.version = 1
     entry.minor_version = 1
@@ -177,14 +183,19 @@ def mock_config_entry_device():
 
 @pytest.fixture
 def mock_api():
-    """Create a mock SmartSolarAPI."""
+    """Create a mock SmartSolarAPI.
+
+    The returned payloads are deep copies as well: ``get_metrics``/
+    ``get_project_metrics`` results are handed to the coordinator, which patches
+    them in place while merging MQTT data.
+    """
     api = MagicMock()
     api.token = "test_token"
     api.token_expiry = None
     api.login = AsyncMock(return_value={"token": "test_token", "expiration": ""})
     api.refresh_token_if_needed = AsyncMock()
-    api.get_metrics = AsyncMock(return_value=SAMPLE_DEVICE_RESPONSE)
-    api.get_project_metrics = AsyncMock(return_value=SAMPLE_PROJECT_RESPONSE)
+    api.get_metrics = AsyncMock(return_value=deepcopy(SAMPLE_DEVICE_RESPONSE))
+    api.get_project_metrics = AsyncMock(return_value=deepcopy(SAMPLE_PROJECT_RESPONSE))
     api.test_connection = AsyncMock(return_value=True)
     api.close = AsyncMock()
     return api
@@ -193,7 +204,7 @@ def mock_api():
 @pytest.fixture
 def mock_coordinator(mock_hass, mock_api, mock_config_entry):
     """Create a mock SmartSolarDataUpdateCoordinator."""
-    from custom_components.smartsolar_mppt.coordinator import SmartSolarDataUpdateCoordinator
+    from custom_components.smartsolar_ha.coordinator import SmartSolarDataUpdateCoordinator
 
     coordinator = SmartSolarDataUpdateCoordinator(
         hass=mock_hass,
@@ -201,6 +212,7 @@ def mock_coordinator(mock_hass, mock_api, mock_config_entry):
         entry=mock_config_entry,
         update_interval=timedelta(seconds=5),
     )
-    # Manually set data to avoid needing async_update
-    coordinator.data = SAMPLE_PROJECT_RESPONSE.copy()
+    # Manually set data to avoid needing async_update. Deep-copied: these tests
+    # merge MQTT data straight into coordinator.data.
+    coordinator.data = deepcopy(SAMPLE_PROJECT_RESPONSE)
     return coordinator

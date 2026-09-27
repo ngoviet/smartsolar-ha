@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.smartsolar_mppt.const import DOMAIN
-from custom_components.smartsolar_mppt.diagnostics import (
+from custom_components.smartsolar_ha.const import DOMAIN
+from custom_components.smartsolar_ha.diagnostics import (
     async_get_config_entry_diagnostics,
 )
 

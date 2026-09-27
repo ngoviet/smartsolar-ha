@@ -3,16 +3,25 @@
 > **System info**: [../System_info/CLAUDE.md](../System_info/CLAUDE.md) — HA at 192.168.10.15, network, credentials
 > **Code search**: `semble search "query" .` — intent-based, ~98% fewer tokens than grep
 
-Home Assistant custom integration for SmartSolar MPPT solar charge controllers. Fetches real-time metrics via HTTP API from `api.smartsolar.io.vn` and MQTT WebSocket Secure from `mqttx.smartsolar.io.vn:8084`. **Current version: v1.5.1**. Verified live against HA **2026.9.3** on 2026-09-27.
+Home Assistant custom integration for SmartSolar MPPT solar charge controllers. Fetches real-time metrics via HTTP API from `api.smartsolar.io.vn` and MQTT WebSocket Secure from `mqttx.smartsolar.io.vn:8084`. **Current version: v2.0.0**. Verified live against HA **2026.9.3** on 2026-09-27.
+
+> ⚠️ **v2.0.0 renamed the domain from `smartsolar_mppt` to `smartsolar_ha`.**
+> Home Assistant identifies an integration by its folder name, which must equal
+> `manifest["domain"]` (`loader.Integration.resolve_from_root()` looks for
+> `custom_components/<domain>/manifest.json`), and the domain may only contain
+> lowercase letters and underscores — so this is a breaking change: existing
+> config entries must be re-added. Entity names were left untouched, so entity
+> IDs, dashboards and long-term statistics survive. `smartsolar_mppt` strings
+> still appearing in this file are historical notes or entity-name-derived IDs.
 
 ## Project Structure
 
 ```
-custom_components/smartsolar_mppt/
+custom_components/smartsolar_ha/
 ├── __init__.py          # Integration entry point, setup/unload, service registration, async_migrate_entry
-├── manifest.json        # v1.5.1, domain=smartsolar_mppt, config_flow=true
+├── manifest.json        # v2.0.0, domain=smartsolar_ha, config_flow=true
 ├── const.py             # Constants, SENSOR_TYPES, AGGREGATION, MQTT config, build_device_info helper
-├── helpers.py           # Shared helpers: coerce_float, stream_dict, guid_sort_key
+├── helpers.py           # Pure helpers: coerce_float, device_logs, as_list, stream_dict, guid_sort_key
 ├── config_flow.py       # Multi-step config flow: auth → mode → device/project, reauth, reconfigure
 ├── api.py               # HTTP API client: login, token refresh, real retry/backoff, get_device_status
 ├── mqtt_client.py       # MQTT client: WSS connect, subscribe, payload parsing, auto-reconnect
@@ -22,8 +31,7 @@ custom_components/smartsolar_mppt/
 ├── diagnostics.py       # Config entry diagnostics with secret redaction
 ├── services.yaml        # Service definitions
 ├── strings.json         # UI strings (English)
-├── translations/        # en.json, vi.json
-└── hacs.json            # HACS configuration
+└── translations/        # en.json, vi.json
 ```
 
 Root-level files:
@@ -36,13 +44,14 @@ upload_to_ha.py          # Minimal uploader: paramiko SSH + base64 + sudo tee
 deploy_to_ha.py          # Full deploy gate: lint+types+tests → backup → upload → restart → wait
 verify_live.py           # Asserts the deployed entities are correct on the live instance
 tests/
-├── conftest.py           # Shared fixtures: mock HA, recorded API responses, coordinator
-├── test_api.py           # API client, error hierarchy, retry/backoff, expiry parsing
-├── test_sensor.py        # Value extraction, naming, per-sensor aggregation strategies
-├── test_mqtt.py          # MQTT payload parsing (both firmware formats), field mapping
+├── conftest.py           # Shared fixtures: mock HA, recorded API responses (deep-copied), coordinator
+├── test_api.py           # API client, error hierarchy, retry/backoff, expiry parsing, token invalidation
+├── test_sensor.py        # Value extraction, naming, per-sensor aggregation, non-finite rejection
+├── test_helpers.py       # coerce_float / as_list / device_logs / stream_dict / guid_sort_key
+├── test_mqtt.py          # MQTT payload parsing (both firmware formats), field mapping, connection state
 ├── test_number.py        # Interval get/set, bounds, RestoreEntity behaviour
 ├── test_config_flow.py   # Every config-flow step, error mapping, translations
-├── test_coordinator.py   # Polling, GUID ordering, daily stats, MQTT robustness
+├── test_coordinator.py   # Polling, GUID ordering, daily stats, malformed payloads, MQTT robustness
 ├── test_diagnostics.py   # Diagnostics content + secret redaction
 ├── test_const.py         # Sensor metadata invariants
 └── test_e2e.py           # Real async_setup_entry/unload_entry against a real HA core
@@ -138,6 +147,39 @@ Sensors in `const.UNRELIABLE_SYNTHESIS_SENSORS` (charge_power, currents,
 signal_quality) always aggregate locally because the server's
 `synthesisStreams` value is frequently stale or absent.
 
+## v2.0.0 — Domain Rename + Audit Fixes
+
+`smartsolar_mppt` → **`smartsolar_ha`** (folder, `manifest.domain`,
+`const.DOMAIN`, imports, deploy/verify paths, docs). HA resolves an integration
+as `custom_components/<domain>/manifest.json` and restricts the domain to
+lowercase letters and underscores, so `smartsolar-ha` (hyphen) is not a valid
+domain, and renaming without changing the domain would make HA fail to find the
+integration. Existing config entries must be re-added; entity names were left
+alone so entity_id / dashboards / statistics survive. Tests: 261 → 366.
+
+| # | Bug | Fix |
+|---|-----|-----|
+| 1 | `"deviceLogs": null` from the API **failed the whole poll** (`UpdateFailed: object of type 'NoneType' has no len()`) — the `len()` sat in a debug statement, and debug arguments are evaluated even when debug logging is off | Shared `helpers.device_logs()` / `as_list()` used by coordinator, sensors and diagnostics |
+| 2 | **NaN/Infinity reached entity states.** `json.loads` accepts bare `NaN`/`Infinity`, NaN survives every `> max_value` check, and a NaN state poisons that sensor's long-term statistics | `coerce_float()` rejects non-finite values; `_convert_stream_value()` checks `math.isfinite` |
+| 3 | A **server-rejected token was cached forever** — 401 did not invalidate it, and the ~30-day expiry kept `refresh_token_if_needed()` from re-authenticating, so every poll failed until HA restarted | `_authed_get()` clears token + expiry on 401 so the next call logs in again |
+| 4 | A **non-object JSON body** (list, HTML error page) escaped as `AttributeError` / `JSONDecodeError` and was unclassified | `_json_object()` normalizes both into `SmartSolarAPIError` |
+| 5 | **408/429 were treated as permanent failures** and never retried | Added to `RETRYABLE_STATUSES`; 4xx client errors still fail fast |
+| 6 | Per-sensor `WARNING` on every poll (plus 1 Hz per MQTT message) when the cloud returned no device logs → log flood | Downgraded to `DEBUG` |
+| 7 | MQTT `null` fields were written into `dataStreams` as the string `"None"`, shadowing the real REST value | `_mqtt_to_data_stream()` drops `None` values |
+| 8 | `SmartSolarMQTTClient.connected` stayed `True` after `stop()` / a finished message loop → diagnostics reported a live connection that did not exist | Flag cleared in `stop()` and on loop exit |
+| 9 | The `refresh_token` service accepted a **missing `entry_id`** and silently did nothing (contradicting `services.yaml`) | `vol.Required("entry_id")` + `ServiceValidationError` for an unknown entry |
+| 10 | `allow_multiple_instances = True` in the config flow is **not a Home Assistant attribute** (verified against `config_entries.py` in 2026.9.2) — dead, misleading code | Removed; multiple entries are allowed because the manifest omits `single_config_entry` |
+| 11 | `verify_live.py` **crashed with a traceback** (instead of reporting FAIL) whenever a state was `unknown`/`unavailable`, and on a missing `HA_TOKEN` | `as_float()` helper, plus explicit messages for a missing token / unreachable instance |
+| 12 | The local deploy gate linted **fewer files than CI** (`upload_to_ha.py` only, so `deploy_to_ha.py`/`verify_live.py` were unchecked) | One shared `SOURCES` list mirrored in `ci.yml` |
+| 13 | Test fixtures handed out **shallow copies** of the recorded payloads while the coordinator merges MQTT data in place → cross-test contamination (two tests only passed because they compared against an object the code had already mutated) | `deepcopy` in `conftest.py` and at every mutation site; `TestFixtureIsolation` in `test_coordinator.py` |
+
+Also fixed: `datetime.now()` → `dt_util.now()` for daily-stats minute buckets
+(HA-local time, consistent with the midnight reset listener); `pyproject.toml`
+now states the real Python floor (`>=3.14.2`, matching HA 2026.x) and
+`ruff target-version = "py314"` (which is why `except A, B:` appears — PEP 758);
+the inner `custom_components/*/hacs.json` was deleted (HACS only reads the
+repository-root `hacs.json`, and that copy disagreed with it).
+
 ## v1.5.1 — Audit Fixes (2026-09-27)
 
 Full audit: 12 real bugs fixed, ruff + mypy clean for the first time, tests
@@ -178,14 +220,17 @@ attributes; logger names moved to `const.py` so noisy sub-loggers can be silence
 ### Running Tests
 
 ```bash
-cd d:/Code/SmartSolar
-py -3.14 -m venv .venv                       # Home Assistant 2026.x needs Python >= 3.14
+py -3.14 -m venv .venv                       # Home Assistant 2026.x needs Python >= 3.14.2
 .venv/Scripts/python -m pip install -e ".[test,dev]"
 .venv/Scripts/python -m pytest tests/ --cov=custom_components/
-.venv/Scripts/ruff check custom_components/ tests/ upload_to_ha.py
-.venv/Scripts/ruff format --check custom_components/ tests/ upload_to_ha.py
+.venv/Scripts/ruff check custom_components/ tests/ upload_to_ha.py deploy_to_ha.py verify_live.py
+.venv/Scripts/ruff format --check custom_components/ tests/ upload_to_ha.py deploy_to_ha.py verify_live.py
 .venv/Scripts/python -m mypy custom_components/
 ```
+
+> The ruff file list is duplicated in `deploy_to_ha.py:SOURCES` and
+> `.github/workflows/ci.yml`; keep the three in sync (the local gate used to be
+> weaker than CI).
 
 `tests/test_e2e.py` runs the real `async_setup_entry` / `async_unload_entry`
 against a real `HomeAssistant` core instance. It deliberately does **not** use
@@ -199,7 +244,7 @@ HA test harness either.
 - Long-lived token available
 
 ### Code Style Targets
-- Python **3.14+** (required by Home Assistant 2026.x), HA **2026.9+**
+- Python **3.14.2+** (required by Home Assistant 2026.x), HA **2026.9+**
 - Dependencies: aiohttp >= 3.8.0, aiomqtt >= 2.0
 - Use `__slots__` for memory efficiency
 - Use `CoordinatorEntity` with `RestoreEntity` for all entities
@@ -222,11 +267,16 @@ mypy and the full test suite pass, archives what is currently deployed to
 and waits for the REST API to answer again:
 
 ```bash
-cd d:/Code/SmartSolar
+cd d:/code/smartsolar_ha
 .venv/Scripts/python deploy_to_ha.py               # full gated deploy
 .venv/Scripts/python deploy_to_ha.py --skip-checks # emergency re-push
 .venv/Scripts/python verify_live.py                # assert the live entities are right
 ```
+
+> ⚠️ Before deploying v2.0.0 to a live instance, copy the old
+> `custom_components/smartsolar_mppt/` off the HA host (or let `deploy_to_ha.py`
+> archive it) and delete the stale config entry — the folder rename means HA can
+> no longer load entries that belong to `smartsolar_mppt`.
 
 > `verify_live.py` needs `SMARTSOLAR_USER` / `SMARTSOLAR_PASS` in `.env` for the
 > per-device WiFi check: it asks the cloud which devices report a `signalQuality`,

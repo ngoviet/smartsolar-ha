@@ -87,8 +87,11 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
     MINOR_VERSION = 2
 
-    # Allow multiple config entries for different accounts/devices
-    allow_multiple_instances = True
+    # NOTE: several config entries (one per account/project/device) are allowed
+    # because manifest.json does not set `single_config_entry`. An earlier
+    # `allow_multiple_instances = True` attribute was a no-op: Home Assistant
+    # has no such flag (checked against homeassistant/config_entries.py in
+    # 2026.9.2), only the manifest key above.
 
     def __init__(self) -> None:
         """Initialize the config flow."""

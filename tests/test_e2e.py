@@ -17,6 +17,7 @@ integration touches are attached manually.
 
 from __future__ import annotations
 
+import math
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from datetime import timedelta
@@ -28,14 +29,14 @@ from homeassistant.config_entries import SOURCE_USER, ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import frame
 
-from custom_components.smartsolar_mppt import (
+from custom_components.smartsolar_ha import (
     async_migrate_entry,
     async_setup_entry,
     async_unload_entry,
 )
-from custom_components.smartsolar_mppt.api import SmartSolarAPIError
-from custom_components.smartsolar_mppt.const import DOMAIN, SENSOR_TYPES, STATS_SENSOR_TYPES
-from custom_components.smartsolar_mppt.coordinator import SmartSolarDataUpdateCoordinator
+from custom_components.smartsolar_ha.api import SmartSolarAPIError
+from custom_components.smartsolar_ha.const import DOMAIN, SENSOR_TYPES, STATS_SENSOR_TYPES
+from custom_components.smartsolar_ha.coordinator import SmartSolarDataUpdateCoordinator
 
 # ── Real payloads recorded from api.smartsolar.io.vn (project 1072) ─────────
 # Two MPPT Mạnh Quân chargers sharing one 24 V battery bus.
@@ -135,8 +136,8 @@ class FakeConfigEntries:
         self.reloaded: list[str] = []
 
     async def async_forward_entry_setups(self, entry: Any, platforms: list[Any]) -> bool:
-        import custom_components.smartsolar_mppt.number as number_mod
-        import custom_components.smartsolar_mppt.sensor as sensor_mod
+        import custom_components.smartsolar_ha.number as number_mod
+        import custom_components.smartsolar_ha.sensor as sensor_mod
 
         setup = {
             "sensor": sensor_mod.async_setup_entry,
@@ -180,9 +181,11 @@ class FakeDeviceRegistry:
 class FakeServices:
     def __init__(self) -> None:
         self.registered: dict[tuple[str, str], Any] = {}
+        self.schemas: dict[tuple[str, str], Any] = {}
 
     def async_register(self, domain: str, service: str, func: Any, schema: Any = None) -> None:
         self.registered[(domain, service)] = func
+        self.schemas[(domain, service)] = schema
 
     def has_service(self, domain: str, service: str) -> bool:
         return (domain, service) in self.registered
@@ -203,7 +206,7 @@ async def running_hass():
     hass.config_entries = config_entries  # type: ignore[assignment]
     hass.services = services  # type: ignore[assignment]
 
-    import custom_components.smartsolar_mppt as integration
+    import custom_components.smartsolar_ha as integration
 
     integration.dr = MagicMock()  # type: ignore[assignment]
     integration.dr.async_get.return_value = device_registry
@@ -243,7 +246,7 @@ def make_entry(**overrides: Any) -> ConfigEntry:
 
 async def setup_with_mocked_api(hass, entry, *, metrics=None, status=None, fail_first=False):
     """Run async_setup_entry with a stubbed API client, return the coordinator."""
-    import custom_components.smartsolar_mppt as integration
+    import custom_components.smartsolar_ha as integration
 
     metrics = metrics if metrics is not None else deepcopy(PROJECT_METRICS)
     status = status if status is not None else deepcopy(DEVICE_STATUS)
@@ -405,6 +408,55 @@ class TestProjectModeSetup:
             entry = make_entry()
             await setup_with_mocked_api(hass, entry)
             assert services.has_service(DOMAIN, "refresh_token")
+
+    @pytest.mark.asyncio
+    async def test_refresh_token_requires_an_entry_id(self):
+        """The schema must demand entry_id, as services.yaml documents.
+
+        It used to be optional, so a call without it silently did nothing and
+        looked like a successful refresh.
+        """
+        async with running_hass() as (hass, _ce, _devices, services):
+            entry = make_entry()
+            await setup_with_mocked_api(hass, entry)
+            schema = services.schemas[(DOMAIN, "refresh_token")]
+
+            assert schema({"entry_id": entry.entry_id}) == {"entry_id": entry.entry_id}
+            # Exception type is not asserted on purpose: Home Assistant 2026
+            # swaps voluptuous for the `probatio` shim, whose MultipleInvalid
+            # does not share a base class with the original vol.Invalid.
+            with pytest.raises(Exception, match="required key not provided"):
+                schema({})
+
+    @pytest.mark.asyncio
+    async def test_refresh_token_rejects_unknown_entry(self):
+        """An unknown entry_id must be reported, not swallowed."""
+        from homeassistant.exceptions import ServiceValidationError
+
+        async with running_hass() as (hass, _ce, _devices, services):
+            entry = make_entry()
+            await setup_with_mocked_api(hass, entry)
+            handler = services.registered[(DOMAIN, "refresh_token")]
+
+            call = MagicMock()
+            call.data = {"entry_id": "does-not-exist"}
+            with pytest.raises(ServiceValidationError, match="Unknown SmartSolar HA config entry"):
+                await handler(call)
+
+    @pytest.mark.asyncio
+    async def test_refresh_token_service_refreshes_the_entry(self):
+        async with running_hass() as (hass, _ce, _devices, services):
+            entry = make_entry()
+            coordinator = await setup_with_mocked_api(hass, entry)
+            handler = services.registered[(DOMAIN, "refresh_token")]
+
+            call = MagicMock()
+            call.data = {"entry_id": entry.entry_id}
+            await handler(call)
+
+            # FakeAPI increments `calls` on every metrics fetch, so the service
+            # must have triggered at least one more refresh.
+            assert coordinator.api.calls >= 2
 
     @pytest.mark.asyncio
     async def test_unload_releases_coordinator_and_api(self):
@@ -653,3 +705,39 @@ class TestMqttLiveUpdates:
 
             wifi = config_entries.platforms["sensor"].by_unique_id(f"{entry.entry_id}_pd_547611_signal_quality")
             assert wifi.native_value == 91.0
+
+    @pytest.mark.asyncio
+    async def test_setup_survives_null_device_logs(self):
+        """A project response with "deviceLogs": null must still set up.
+
+        The poll used to die with ``UpdateFailed: object of type 'NoneType' has
+        no len()`` from a debug log line, which left every entity unavailable.
+        """
+        async with running_hass() as (hass, config_entries, _devices, _services):
+            entry = make_entry()
+            metrics = {"synthesisStreams": deepcopy(PROJECT_METRICS["synthesisStreams"]), "deviceLogs": None}
+
+            coordinator = await setup_with_mocked_api(hass, entry, metrics=metrics)
+
+            assert coordinator.last_update_success is True
+            # Only the synthesis sensors exist: no device GUIDs to enumerate.
+            sensors = config_entries.platforms["sensor"].entities
+            assert len(sensors) == len(SENSOR_TYPES)
+
+            total_voltage = config_entries.platforms["sensor"].by_unique_id(f"{entry.entry_id}_p_1072_pv_voltage")
+            assert total_voltage.native_value == pytest.approx(23.13999939)
+
+    @pytest.mark.asyncio
+    async def test_setup_survives_non_finite_values(self):
+        """NaN/Infinity in a payload must not become an entity state."""
+        async with running_hass() as (hass, config_entries, _devices, _services):
+            entry = make_entry()
+            metrics = deepcopy(PROJECT_METRICS)
+            metrics["deviceLogs"][0]["dataStreams"].append({"name": "temperature", "value": float("nan")})
+            metrics["deviceLogs"][1]["dataStreams"].append({"name": "temperature", "value": float("inf")})
+
+            await setup_with_mocked_api(hass, entry, metrics=metrics)
+
+            for guid in ("547611", "14756976"):
+                temp = config_entries.platforms["sensor"].by_unique_id(f"{entry.entry_id}_pd_{guid}_temperature")
+                assert temp.native_value is None or math.isfinite(temp.native_value)

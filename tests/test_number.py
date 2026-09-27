@@ -7,12 +7,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.smartsolar_mppt.const import (
+from custom_components.smartsolar_ha.const import (
     DEFAULT_UPDATE_INTERVAL,
     MAX_UPDATE_INTERVAL,
     MIN_UPDATE_INTERVAL,
 )
-from custom_components.smartsolar_mppt.number import UpdateIntervalNumber
+from custom_components.smartsolar_ha.number import UpdateIntervalNumber
 
 
 class TestUpdateIntervalNumber:
