@@ -23,9 +23,16 @@ class TestSensorTypes:
     def test_all_ten_sensor_types_exist(self):
         """Verify all 10 sensor types are defined."""
         expected = {
-            "pv_voltage", "pv_current", "bat_voltage", "bat_current",
-            "charge_power", "today_kwh", "total_kwh", "temperature",
-            "signal_quality", "status",
+            "pv_voltage",
+            "pv_current",
+            "bat_voltage",
+            "bat_current",
+            "charge_power",
+            "today_kwh",
+            "total_kwh",
+            "temperature",
+            "signal_quality",
+            "status",
         }
         assert set(SENSOR_TYPES.keys()) == expected
 
@@ -43,14 +50,39 @@ class TestSensorTypes:
 
     def test_max_value_on_relevant_sensors(self):
         """Sensors that can overflow should have max_value."""
-        sensors_with_max = {"pv_voltage", "pv_current", "bat_voltage", "bat_current",
-                            "charge_power", "today_kwh", "total_kwh", "temperature"}
+        sensors_with_max = {
+            "pv_voltage",
+            "pv_current",
+            "bat_voltage",
+            "bat_current",
+            "charge_power",
+            "today_kwh",
+            "total_kwh",
+            "temperature",
+        }
         for st in sensors_with_max:
             assert "max_value" in SENSOR_TYPES[st], f"{st} missing max_value"
 
     def test_status_has_no_max_value(self):
         """Status sensor should NOT have max_value (it's a string code)."""
         assert "max_value" not in SENSOR_TYPES["status"]
+
+    def test_energy_sensors_use_a_valid_state_class(self):
+        """HA rejects state_class 'measurement' together with device_class 'energy'.
+
+        It logs a warning per entity and refuses to build statistics, so the
+        energy sensors must declare total / total_increasing.
+        """
+        for sensor_type, info in SENSOR_TYPES.items():
+            if info.get("device_class") == "energy":
+                assert info.get("state_class") in ("total", "total_increasing"), (
+                    f"{sensor_type} has device_class=energy with an invalid state_class"
+                )
+
+    def test_today_energy_is_a_resetting_meter(self):
+        """The device zeroes today_kwh at local midnight."""
+        assert SENSOR_TYPES["today_kwh"]["state_class"] == "total_increasing"
+        assert SENSOR_TYPES["total_kwh"]["state_class"] == "total_increasing"
 
 
 class TestStatusMapping:

@@ -7,42 +7,56 @@ on:
     branches: [main]
 
 jobs:
-  test:
-    name: Python ${{ matrix.python-version }}
+  lint:
+    name: Lint & type check
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.11", "3.12", "3.13"]
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.14"
 
+      - name: Install lint tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install "ruff>=0.4" "mypy>=1.9" "homeassistant==2026.9.2"
+
+      - name: Ruff lint
+        run: ruff check custom_components/ tests/ upload_to_ha.py deploy_to_ha.py
+
+      - name: Ruff format check
+        run: ruff format --check custom_components/ tests/ upload_to_ha.py deploy_to_ha.py
+
+      # Not `|| true`: this gate was previously disabled and let 29 type errors
+      # accumulate, including the real "callable | None" and DeviceInfo bugs.
+      - name: Mypy
+        run: mypy custom_components/
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      # The integration imports Home Assistant itself, so the tests need HA
+      # installed. `[test]` pins the HA version the integration is built for.
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install ".[dev]"
-
-      - name: Lint with ruff
-        run: ruff check custom_components/
-
-      - name: Format check with ruff
-        run: ruff format --check custom_components/
-
-      - name: Type check with mypy
-        run: mypy custom_components/ || true
+          pip install ".[test]"
 
       - name: Test with pytest
         run: pytest tests/ --cov=custom_components/ --cov-report=term-missing --cov-report=xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
-        if: matrix.python-version == '3.12'
         with:
           file: ./coverage.xml
           fail_ci_if_error: false

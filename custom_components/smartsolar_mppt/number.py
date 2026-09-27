@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
-from typing import Any
 
 from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import translation
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
+    DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
     MAX_UPDATE_INTERVAL,
     MIN_UPDATE_INTERVAL,
@@ -36,17 +36,23 @@ async def async_setup_entry(
     async_add_entities([UpdateIntervalNumber(coordinator, entry)])
 
 
-class UpdateIntervalNumber(CoordinatorEntity, NumberEntity):  # type: ignore[misc]
-    """Number entity for update interval."""
+class UpdateIntervalNumber(CoordinatorEntity, RestoreEntity, NumberEntity):
+    """Number entity for update interval.
 
-    __slots__ = ("_entry", "_attr_unique_id", "_attr_name", "_attr_native_unit_of_measurement")
+    Inherits :class:`RestoreEntity` so the chosen interval survives a Home
+    Assistant restart even before the config entry data is re-read.
+    """
+
+    __slots__ = ("_entry",)
 
     _attr_has_entity_name = True
+    _attr_translation_key = "update_frequency"
     _attr_icon = "mdi:timer-cog"
     _attr_mode = NumberMode.BOX
     _attr_native_min_value = MIN_UPDATE_INTERVAL
     _attr_native_max_value = MAX_UPDATE_INTERVAL
     _attr_native_step = 1
+    _attr_native_unit_of_measurement = "s"
 
     def __init__(
         self,
@@ -57,57 +63,61 @@ class UpdateIntervalNumber(CoordinatorEntity, NumberEntity):  # type: ignore[mis
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_update_interval"
-        self._attr_name = "Update Frequency"
-        self._attr_native_unit_of_measurement = "seconds"
-
-    async def async_added_to_hass(self) -> None:
-        """Called when entity is added to hass."""
-        await super().async_added_to_hass()
-        await self._update_translations()
-
-    async def _update_translations(self) -> None:
-        """Update entity name and unit from translations."""
-        try:
-            translations = await translation.async_get_translations(
-                self.hass, self.hass.config.language, "config", {"smartsolar_mppt"}
-            )
-            name_key = "entity.number.update_frequency.name"
-            if name_key in translations:
-                self._attr_name = translations[name_key]
-            unit_key = "entity.number.update_frequency.unit"
-            if unit_key in translations:
-                self._attr_native_unit_of_measurement = translations[unit_key]
-        except (ValueError, TypeError, KeyError, AttributeError) as e:
-            _LOGGER.warning("Could not load translations: %s", e)
-
-    @property
-    def device_info(self) -> dict[str, Any] | None:
-        """Return device info."""
-        return build_device_info(
-            self._entry.entry_id,
-            self._entry.data.get("mode"),
-            self._entry.data.get("project_id"),
+        self._attr_device_info = build_device_info(
+            entry.entry_id,
+            entry.data.get("mode"),
+            entry.data.get("project_id"),
         )
 
-    @property  # type: ignore[override]
+    async def async_added_to_hass(self) -> None:
+        """Restore the last known interval when the entity comes back."""
+        await super().async_added_to_hass()
+
+        last_state = await self.async_get_last_state()
+        if last_state is None:
+            return
+        try:
+            restored = int(float(last_state.state))
+        except (ValueError, TypeError):
+            return
+        if not MIN_UPDATE_INTERVAL <= restored <= MAX_UPDATE_INTERVAL:
+            return
+        if self.coordinator.update_interval == timedelta(seconds=restored):
+            return
+
+        _LOGGER.debug("Restoring update interval to %s seconds", restored)
+        self.coordinator.update_interval = timedelta(seconds=restored)
+
+    @property
     def native_value(self) -> float | None:
         """Return current update interval in seconds."""
         if self.coordinator.update_interval:
             return self.coordinator.update_interval.total_seconds()
-        return 5.0
+        return DEFAULT_UPDATE_INTERVAL.total_seconds()
 
     async def async_set_native_value(self, value: float) -> None:
         """Set new update interval."""
-        new_interval = timedelta(seconds=int(value))
-        _LOGGER.info("Changing update interval from %s to %s seconds",
-                     self.coordinator.update_interval, value)
+        new_seconds = int(value)
+        if not MIN_UPDATE_INTERVAL <= new_seconds <= MAX_UPDATE_INTERVAL:
+            _LOGGER.warning(
+                "Rejecting update interval %s (allowed %s-%s seconds)",
+                value,
+                MIN_UPDATE_INTERVAL,
+                MAX_UPDATE_INTERVAL,
+            )
+            return
 
-        new_data = self._entry.data.copy()
-        new_data["update_interval"] = int(value)
+        _LOGGER.info(
+            "Changing update interval from %s to %s seconds",
+            self.coordinator.update_interval,
+            new_seconds,
+        )
+
+        # Persist so the value survives a restart/reload of this config entry.
+        new_data = {**self._entry.data, "update_interval": new_seconds}
         self.hass.config_entries.async_update_entry(self._entry, data=new_data)
 
-        self.coordinator.update_interval = new_interval
+        self.coordinator.update_interval = timedelta(seconds=new_seconds)
         await self.coordinator.async_refresh()
         self.async_write_ha_state()
-        _LOGGER.info("Update interval changed to %s seconds successfully", value)
-
+        _LOGGER.debug("Update interval changed to %s seconds", new_seconds)

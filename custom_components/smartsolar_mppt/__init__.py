@@ -13,7 +13,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import device_registry as dr
 
-from .api import SmartSolarAPI
+from .api import SmartSolarAPI, SmartSolarAPIError
 from .const import DOMAIN, build_device_info
 from .coordinator import SmartSolarDataUpdateCoordinator
 from .mqtt_client import SmartSolarMQTTClient
@@ -33,16 +33,26 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate old config entry to new version."""
     _LOGGER.debug(
         "Migrating config entry from version %s.%s",
-        entry.version, entry.minor_version,
+        entry.version,
+        entry.minor_version,
     )
 
-    if entry.version == 1 and entry.minor_version == 1:
+    if entry.version > 1:
+        # Downgrading is not supported — refuse rather than corrupt the entry.
+        _LOGGER.error(
+            "Cannot migrate config entry from version %s.%s: newer than this integration supports",
+            entry.version,
+            entry.minor_version,
+        )
+        return False
+
+    if entry.version == 1 and entry.minor_version < 2:
         # v1 → v1.2: ensure chipset_ids are strings, add missing keys
-        new_data = {**entry.data}
-        if "chipset_ids" in new_data:
-            new_data["chipset_ids"] = [str(cid) for cid in new_data["chipset_ids"]]
-        if "update_interval" not in new_data:
-            new_data["update_interval"] = 5
+        new_data = dict(entry.data)
+        chipset_ids = new_data.get("chipset_ids")
+        if chipset_ids is not None:
+            new_data["chipset_ids"] = [str(cid) for cid in chipset_ids]
+        new_data.setdefault("update_interval", 5)
 
         hass.config_entries.async_update_entry(
             entry,
@@ -57,6 +67,15 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up SmartSolar MPPT from a config entry."""
     hass.data.setdefault(DOMAIN, {})
+
+    missing = [key for key in ("username", "password") if not entry.data.get(key)]
+    if missing:
+        _LOGGER.error(
+            "Config entry %s is missing required keys: %s — cannot set up",
+            entry.entry_id,
+            ", ".join(missing),
+        )
+        return False
 
     # Initialize API client
     api = SmartSolarAPI(
@@ -83,7 +102,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Fetch initial data FIRST so sensor.py discovers per-device GUIDs from API.
     # Use async_refresh() instead of async_config_entry_first_refresh() to avoid
     # state check error on reload (HA 2025.x+).
-    await coordinator.async_refresh()
+    # A failed first refresh must NOT abort setup: the MQTT/HTTP paths recover
+    # and the entities simply start as unavailable.
+    try:
+        await coordinator.async_refresh()
+    except Exception as exc:  # noqa: BLE001 - setup must survive any API failure
+        _LOGGER.warning("Initial SmartSolar refresh failed (%s) — continuing setup", exc)
 
     # Set up MQTT real-time data subscription (optional — degrades gracefully)
     mqtt_client = None
@@ -94,11 +118,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Determine device GUIDs for MQTT subscription
     mqtt_device_guids: list[str] = []
     if coordinator.data and "deviceLogs" in coordinator.data:
-        mqtt_device_guids = [
-            str(log.get("deviceGuid"))
-            for log in coordinator.data.get("deviceLogs", [])
-            if log.get("deviceGuid")
-        ]
+        mqtt_device_guids = coordinator.device_guids(coordinator.data)
     if not mqtt_device_guids and chipset_ids:
         mqtt_device_guids = [str(cid) for cid in chipset_ids]
 
@@ -125,10 +145,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         mqtt_password = mqtt_conn.get("password")
                         _LOGGER.debug("MQTT credentials fetched from API")
                     else:
-                        _LOGGER.warning(
-                            "Device status response missing mqttConnection — MQTT disabled"
-                        )
-                except Exception as exc:
+                        _LOGGER.warning("Device status response missing mqttConnection — MQTT disabled")
+                except (SmartSolarAPIError, aiohttp.ClientError, TimeoutError) as exc:
                     _LOGGER.warning(
                         "Could not fetch MQTT credentials: %s — continuing without MQTT",
                         exc,
@@ -148,9 +166,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     len(mqtt_device_guids),
                 )
             else:
-                _LOGGER.warning(
-                    "No MQTT credentials available — MQTT real-time updates disabled"
-                )
+                _LOGGER.warning("No MQTT credentials available — MQTT real-time updates disabled")
                 mqtt_client = None
 
         except Exception as exc:
@@ -187,14 +203,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         DOMAIN,
         "refresh_token",
         async_refresh_token,
-        schema=vol.Schema({
-            "entry_id": str,
-        }),
+        schema=vol.Schema(
+            {
+                "entry_id": str,
+            }
+        ),
     )
 
     return True
-
-
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -211,13 +227,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        coordinator: SmartSolarDataUpdateCoordinator = hass.data[DOMAIN].get(entry.entry_id)
+        coordinator: SmartSolarDataUpdateCoordinator | None = hass.data[DOMAIN].get(entry.entry_id)
         if coordinator:
             try:
                 await coordinator.api.close()
             except (aiohttp.ClientError, RuntimeError) as e:
                 _LOGGER.warning("Error closing API session: %s", e)
             finally:
+                # Stops the poll timer and cancels the midnight listener and
+                # the MQTT notify throttle registered in the coordinator;
+                # without this a reload leaks them.
+                await coordinator.async_shutdown()
                 hass.data[DOMAIN].pop(entry.entry_id, None)
 
     return unload_ok

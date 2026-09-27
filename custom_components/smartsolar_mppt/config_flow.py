@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 import aiohttp
 import voluptuous as vol
@@ -63,20 +63,19 @@ STEP_PROJECT_METHOD_DATA_SCHEMA = vol.Schema(
     {
         vol.Required("project_method"): selector.SelectSelector(
             selector.SelectSelectorConfig(
-                options=[
-                    {"value": PROJECT_MODE_BY_ID, "label": "By Project ID (recommended)"},
-                    {"value": PROJECT_MODE_BY_DEVICES, "label": "By Device ID list"}
-                ]
+                options=cast(
+                    "list[selector.SelectOptionDict]",
+                    [
+                        {"value": PROJECT_MODE_BY_ID, "label": "By Project ID (recommended)"},
+                        {"value": PROJECT_MODE_BY_DEVICES, "label": "By Device ID list"},
+                    ],
+                )
             )
         )
     }
 )
 
-STEP_PROJECT_ID_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_PROJECT_ID): str
-    }
-)
+STEP_PROJECT_ID_DATA_SCHEMA = vol.Schema({vol.Required(CONF_PROJECT_ID): str})
 
 # Options schema removed - TextSelector doesn't support min/max
 # Using vol.Schema directly in async_step_init instead
@@ -102,22 +101,44 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._project_id: str | None = None
         self._device_types: list[int] | None = None
         self._api: SmartSolarAPI | None = None
+        self._api_username: str | None = None
+        self._api_password: str | None = None
 
     def _get_api(self) -> SmartSolarAPI:
-        """Get or create cached API client for the flow."""
+        """Get or create the cached API client for the flow.
+
+        The client is bound to the credentials it was built for. If the flow's
+        current credentials differ, the stale client is dropped and a fresh one
+        is created, so a retry with corrected credentials never authenticates
+        with the first attempt's values.
+        """
+        if self._username is None or self._password is None:
+            raise ValueError("Missing credentials")
+        if self._api is not None and (self._api_username != self._username or self._api_password != self._password):
+            self._api = None
         if self._api is None:
-            if self._username is None or self._password is None:
-                raise ValueError("Missing credentials")
             self._api = SmartSolarAPI(
                 username=self._username,
                 password=self._password,
                 hass=self.hass,
             )
+            self._api_username = self._username
+            self._api_password = self._password
         return self._api
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:  # type: ignore[override]
+    async def _close_api(self) -> None:
+        """Close and drop the cached API session.
+
+        The config flow can be abandoned at any step (user cancels, HA aborts);
+        without this the aiohttp session would leak.
+        """
+        api, self._api = self._api, None
+        self._api_username = None
+        self._api_password = None
+        if api is not None:
+            await api.close()
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the initial step."""
         errors: dict[str, str] = {}
 
@@ -132,12 +153,10 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "password_required"
             else:
                 try:
-                    # Test the connection using cached API
                     api = self._get_api()
                     if await api.test_connection():
                         return await self.async_step_mode()
-                    else:
-                        errors["base"] = ERROR_CANNOT_CONNECT
+                    errors["base"] = ERROR_CANNOT_CONNECT
                 except SmartSolarAPIError as err:
                     if err.status_code == 401:
                         errors["base"] = ERROR_INVALID_CREDENTIALS
@@ -147,6 +166,8 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 except (aiohttp.ClientError, ValueError, KeyError) as err:
                     _LOGGER.error("Unexpected error during login: %s", err)
                     errors["base"] = ERROR_UNKNOWN
+                finally:
+                    await self._close_api()
 
         return self.async_show_form(
             step_id="user",
@@ -154,9 +175,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_mode(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:  # type: ignore[override]
+    async def async_step_mode(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the mode selection step."""
         if user_input is not None:
             self._mode = user_input[CONF_MODE]
@@ -171,9 +190,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=STEP_MODE_DATA_SCHEMA,
         )
 
-    async def async_step_project_method(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:  # type: ignore[override]
+    async def async_step_project_method(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the project method selection step."""
         if user_input is not None:
             self._project_method = user_input["project_method"]
@@ -187,9 +204,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=STEP_PROJECT_METHOD_DATA_SCHEMA,
         )
 
-    async def async_step_project_id(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:  # type: ignore[override]
+    async def async_step_project_id(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the project ID input step."""
         errors: dict[str, str] = {}
 
@@ -203,12 +218,8 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # Test API call with project ID
                 try:
                     api = self._get_api()
-                    try:
-                        await api.login()
-                        await api.get_project_metrics(project_id)
-                    finally:
-                        await api.close()
-                        self._api = None  # Reset cached API after use
+                    await api.login()
+                    await api.get_project_metrics(project_id)
 
                     # Success - save configuration
                     self._project_id = project_id
@@ -220,9 +231,12 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         errors["base"] = "project_not_found"
                     else:
                         errors["base"] = "cannot_connect"
+                    _LOGGER.error("API error during project test: %s", err)
                 except (aiohttp.ClientError, ValueError, KeyError) as err:
                     _LOGGER.error("Error during API test: %s", err)
                     errors["base"] = "unknown"
+                finally:
+                    await self._close_api()
 
         return self.async_show_form(
             step_id="project_id",
@@ -230,9 +244,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_project_devices(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:  # type: ignore[override]
+    async def async_step_project_devices(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the project devices configuration step."""
         errors: dict[str, str] = {}
 
@@ -290,6 +302,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             CONF_DEVICE_TYPE: device_types[0],  # Primary device type
                             CONF_CHIPSET_IDS: self._chipset_ids,
                             "device_types": self._device_types,  # All device types
+                            "update_interval": 5,
                         },
                     )
 
@@ -302,6 +315,8 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 except (aiohttp.ClientError, ValueError, KeyError) as err:
                     _LOGGER.error("Unexpected error during test: %s", err)
                     errors["base"] = ERROR_UNKNOWN
+                finally:
+                    await self._close_api()
 
         return self.async_show_form(
             step_id="project_devices",
@@ -309,9 +324,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_chipset_ids(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:  # type: ignore[override]
+    async def async_step_chipset_ids(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the chipset IDs input step."""
         errors: dict[str, str] = {}
 
@@ -331,7 +344,12 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                     # Test the configuration
                     try:
-                        if self._username is None or self._password is None or self._device_type is None or self._mode is None:
+                        if (
+                            self._username is None
+                            or self._password is None
+                            or self._device_type is None
+                            or self._mode is None
+                        ):
                             raise ValueError("Missing credentials")
                         api = self._get_api()
 
@@ -356,6 +374,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                                 CONF_MODE: self._mode,
                                 CONF_DEVICE_TYPE: self._device_type,
                                 CONF_CHIPSET_IDS: self._chipset_ids,
+                                "update_interval": 5,
                             },
                         )
 
@@ -368,6 +387,8 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     except (aiohttp.ClientError, ValueError, KeyError) as err:
                         _LOGGER.error("Unexpected error during test: %s", err)
                         errors["base"] = ERROR_UNKNOWN
+                    finally:
+                        await self._close_api()
 
         # Build help text based on mode
         help_text = ""
@@ -383,9 +404,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={"help_text": help_text},
         )
 
-    async def async_step_reauth(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_reauth(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle re-authentication flow for expired credentials."""
         errors: dict[str, str] = {}
         reauth_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
@@ -399,10 +418,13 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     password=user_input[CONF_PASSWORD],
                     hass=self.hass,
                 )
-                if await api.test_connection():
-                    self.hass.config_entries.async_update_entry(
-                        reauth_entry, data={**reauth_entry.data, **user_input}
-                    )
+                try:
+                    connected = await api.test_connection()
+                finally:
+                    await api.close()
+
+                if connected:
+                    self.hass.config_entries.async_update_entry(reauth_entry, data={**reauth_entry.data, **user_input})
                     await self.hass.config_entries.async_reload(reauth_entry.entry_id)
                     return self.async_abort(reason="reauth_successful")
                 errors["base"] = ERROR_CANNOT_CONNECT
@@ -414,10 +436,12 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reauth",
-            data_schema=vol.Schema({
-                vol.Required(CONF_USERNAME, default=reauth_entry.data.get(CONF_USERNAME, "")): str,
-                vol.Required(CONF_PASSWORD): str,
-            }),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_USERNAME, default=reauth_entry.data.get(CONF_USERNAME, "")): str,
+                    vol.Required(CONF_PASSWORD): str,
+                }
+            ),
             errors=errors,
         )
 
@@ -433,10 +457,12 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="reconfigure_successful")
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=vol.Schema({
-                vol.Required(CONF_USERNAME, default=reconfigure_entry.data.get(CONF_USERNAME, "")): str,
-                vol.Required(CONF_PASSWORD, default=reconfigure_entry.data.get(CONF_PASSWORD, "")): str,
-            }),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_USERNAME, default=reconfigure_entry.data.get(CONF_USERNAME, "")): str,
+                    vol.Required(CONF_PASSWORD, default=reconfigure_entry.data.get(CONF_PASSWORD, "")): str,
+                }
+            ),
         )
 
     async def _create_entry(self) -> ConfigFlowResult:
@@ -462,6 +488,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_PASSWORD: self._password,
             CONF_MODE: self._mode,
             CONF_DEVICE_TYPE: self._device_type,
+            "update_interval": 5,
         }
 
         if self._project_id:
@@ -473,10 +500,6 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             title=f"SmartSolar MPPT ({self._mode.title()})",
             data=data,
         )
-
-
-
-
 
 
 class CannotConnect(HomeAssistantError):

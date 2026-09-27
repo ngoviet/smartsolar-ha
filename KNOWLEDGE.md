@@ -1,5 +1,10 @@
 # SmartSolar MPPT MQ — Toàn Bộ Kiến Thức API & Tích Hợp
 
+> **Trạng thái**: ✅ LIVE · **Phiên bản**: **v1.5.1** (2026-09-27) · **Nguồn sự thật**: [../STATUS.md](../STATUS.md) · **Cập nhật**: 2026-09-27
+>
+> ⚠️ Nội dung tổng hợp **2026-06-22**, đã bổ sung mục [7.4 — audit v1.5.1](#74-đã-fix-trong-v151-2026-09-27--audit-toàn-diện).
+> Đối chiếu lại entity thực tế nếu có sai lệch.
+
 > **Mục đích:** Tài liệu tham khảo đầy đủ để viết lại integration từ đầu hoặc nâng cấp lên GitHub.
 > **Ngày tổng hợp:** 2026-06-22
 > **Phạm vi:** 2 sạc MPPT Mạnh Quân (PV1 60A GUID=547611 + PV2 40A GUID=14756976), Project ID 1072, hệ 24V off-grid.
@@ -145,19 +150,20 @@ GET https://api.smartsolar.io.vn/Metric/SynthesisMetrics?deviceType=2&deviceGuid
 
 **Lưu ý:** Nhiều tham số `deviceGuids` (mỗi GUID 1 tham số). Response giống `ProjectMetrics`.
 
-### Data Stream Field Names (9 loại sensor)
+### Data Stream Field Names (10 loại sensor — v1.4.0)
 
-| API Field | Unit | Description | Device Class |
-|-----------|------|-------------|-------------|
-| `pv_voltage` | V | Điện áp tấm pin | `voltage` |
-| `pv_current` | A | Dòng điện tấm pin | `current` |
-| `bat_voltage` | V | Điện áp battery/ắc quy | `voltage` |
-| `bat_current` | A | Dòng sạc vào battery | `current` |
-| `charge_power` | W | Công suất sạc hiện tại | `power` |
-| `today_kwh` | kWh | Năng lượng hôm nay | `energy` (total_increasing) |
-| `total_kwh` | kWh | Tổng năng lượng tích lũy | `energy` (total_increasing) |
-| `temperature` | °C | Nhiệt độ controller | `temperature` |
-| `status` | — | Trạng thái (0-3) | — |
+| API Field | Unit | Description | Device Class | Source |
+|-----------|------|-------------|-------------|--------|
+| `pv_voltage` | V | Điện áp tấm pin | `voltage` | REST + MQTT |
+| `pv_current` | A | Dòng điện tấm pin | `current` | REST + MQTT |
+| `bat_voltage` | V | Điện áp battery/ắc quy | `voltage` | REST + MQTT |
+| `bat_current` | A | Dòng sạc vào battery | `current` | REST + MQTT |
+| `charge_power` | W | Công suất sạc hiện tại | `power` | REST + MQTT |
+| `today_kwh` | kWh | Năng lượng hôm nay | `energy` (total_increasing) | REST + MQTT |
+| `total_kwh` | kWh | Tổng năng lượng tích lũy | `energy` (total_increasing) | REST + MQTT |
+| `temperature` | °C | Nhiệt độ controller | `temperature` | REST + MQTT |
+| `signal_quality` | % | WiFi Signal (cường độ sóng WiFi) | — | MQTT + REST |
+| `status` | — | Trạng thái (0-3) | — | REST + MQTT |
 
 ### Status Codes
 
@@ -434,14 +440,16 @@ SmartSolarAPIError(Exception)
 | Item | Value |
 |------|-------|
 | HA URL | `http://192.168.10.15:8123` |
-| HA Version | 2026.5.0 (Docker) |
+| HA Version | **2026.9.3** (HA Supervised, Docker) — đo 2026-09-27 |
+| HA Python | 3.14.6 — nên venv test local phải là Python **3.14** |
 | SSH | `vokupt@192.168.10.15` — password via `HA_PASS` env var |
-| HA Token (long-lived) | Trong `HA_info.txt` |
+| HA Token (long-lived) | Trong `HA_info.txt` / `.env` |
 | SMB Config | `\\192.168.10.15\config\` (user: vokupt) |
 | SMB packages | `\\192.168.10.15\config\packages\` |
 | SMB Frigate addon | `\\192.168.10.15\addon_configs\ccab4aaf_frigate\` |
-| HA restart API | `POST /api/services/homeassistant/restart` |
+| HA restart API | `POST /api/services/homeassistant/restart` (503/504 = thành công) |
 | HA reload YAML | `POST /api/services/homeassistant/reload_all` (LƯU Ý: không reload được utility_meter) |
+| Deploy chuẩn | `python deploy_to_ha.py` (có gate lint/mypy/test) rồi `python verify_live.py` |
 
 ### 4.2 Config Entry Hiện Tại
 
@@ -476,9 +484,12 @@ State: LOADED
 >
 > **Ghi nhận inconsistency:** YAML header (`30_solar_24v_energy_stats.yaml`) ghi PV1=GUID 547611, PV2=GUID 14756976. Nhưng một số entity cũ (dạng `charge_power_<GUID>`) trong Lovelace dashboard cũ map ngược lại: `pv1_power` → GUID 14756976, `pv2_power` → GUID 547611. Các entity mới dạng `technology_...pv1_*`/`technology_...pv2_*` do HA tự sinh tên dựa trên thứ tự GUID trong API response, có thể khác với entity GUID-suffixed cũ. Khi viết lại, cần cố định mapping: PV Chính = GUID 14756976 (40A, ~217W), PV Phụ = GUID 547611 (60A, ~2W).
 
-### 4.5 Tất Cả Entity Hiện Tại (29 entities)
+### 4.5 Tất Cả Entity Hiện Tại (38 entity — v1.5.1)
 
-#### Synthesis (Tổng) — 9 sensors
+> Đo trực tiếp `GET /api/states` ngày **2026-09-27** sau khi deploy v1.5.1.
+> Trước đó chỉ 32 entity vì bản 1.3.0 đang chạy thiếu 6 sensor thống kê.
+
+#### Synthesis (Tổng) — 10 sensors
 ```
 sensor.smartsolar_mppt_project_1072_pv_voltage       ← "Tổng PV Voltage"
 sensor.smartsolar_mppt_project_1072_pv_current        ← "Tổng PV Current"
@@ -489,9 +500,10 @@ sensor.smartsolar_mppt_project_1072_today_energy      ← "Tổng Today Energy" 
 sensor.smartsolar_mppt_project_1072_total_energy      ← "Tổng Total Energy" ★
 sensor.smartsolar_mppt_project_1072_temperature       ← "Tổng Temperature" ★
 sensor.smartsolar_mppt_project_1072_status            ← "Tổng Status"
+sensor.technology_smartsolar_mppt_project_1072_total_wifi_signal  ← "Tổng WiFi Signal" 🆕
 ```
 
-#### PV1 (GUID=547611) — 9 sensors
+#### PV1 (GUID=547611) — 10 sensors
 ```
 sensor.technology_smartsolar_mppt_project_1072_pv1_pv_voltage
 sensor.technology_smartsolar_mppt_project_1072_pv1_pv_current
@@ -502,9 +514,10 @@ sensor.technology_smartsolar_mppt_project_1072_pv1_today_energy  ★
 sensor.technology_smartsolar_mppt_project_1072_pv1_total_energy  ★
 sensor.technology_smartsolar_mppt_project_1072_pv1_temperature
 sensor.technology_smartsolar_mppt_project_1072_pv1_status
+sensor.technology_smartsolar_mppt_project_1072_pv1_wifi_signal   🆕
 ```
 
-#### PV2 (GUID=14756976) — 9 sensors
+#### PV2 (GUID=14756976) — 10 sensors
 ```
 sensor.technology_smartsolar_mppt_project_1072_pv2_pv_voltage
 sensor.technology_smartsolar_mppt_project_1072_pv2_pv_current
@@ -515,12 +528,31 @@ sensor.technology_smartsolar_mppt_project_1072_pv2_today_energy  ★
 sensor.technology_smartsolar_mppt_project_1072_pv2_total_energy  ★
 sensor.technology_smartsolar_mppt_project_1072_pv2_temperature
 sensor.technology_smartsolar_mppt_project_1072_pv2_status
+sensor.technology_smartsolar_mppt_project_1072_pv2_wifi_signal   ⚠️ unknown — API trả signalQuality=null cho GUID này (xem 7.4.9)
 ```
+
+#### Thống kê trong ngày (3 sensor × 2 thiết bị = 6) — 🆕 v1.5.1
+
+Do coordinator tự tính (`get_daily_stats()`), server SmartSolar **không** lưu
+lịch sử dài hạn. Reset lúc nửa đêm theo giờ local.
+
+```
+sensor.technology_smartsolar_mppt_project_1072_pv1_peak_power_today        ← W, đỉnh công suất
+sensor.technology_smartsolar_mppt_project_1072_pv1_avg_power_today         ← W, công suất trung bình
+sensor.technology_smartsolar_mppt_project_1072_pv1_production_hours_today  ← h, số giờ có nắng (>5 W)
+sensor.technology_smartsolar_mppt_project_1072_pv2_peak_power_today
+sensor.technology_smartsolar_mppt_project_1072_pv2_avg_power_today
+sensor.technology_smartsolar_mppt_project_1072_pv2_production_hours_today
+```
+
+> ⚠️ Trước v1.5.1, 6 entity này **có trong registry nhưng luôn `unavailable`**
+> vì bản đang chạy trên HA là 1.3.0 không có class `SmartSolarStatsSensor`.
+> Xem [7.4.1](#741-phát-hiện-quan-trọng-nhất--ha-đang-chạy-bản-cũ).
 
 #### Khác — 2 entities
 ```
-number.smartsolar_mppt_project_update_frequency   ← Update Frequency (1-30s)
-update.smartsolar_mppt_update                     ← HACS update entity
+number.technology_smartsolar_mppt_project_1072_update_frequency   ← Update Frequency (1-30s)
+update.smartsolar_mppt_sac_mppt_manh_quan_update                  ← HACS update entity
 ```
 
 ★ = Entity được dùng trong thống kê năng lượng dẫn xuất
@@ -650,6 +682,15 @@ sensor:
 - **HA 2026.5.0:** `history_stats` với template `start`/`end` không hoạt động
 - **HA 2026.5.0:** `reload_all` không reload được utility_meter → cần restart HA
 - **HA 2026.5.0:** `async_config_entry_first_refresh` từ chối khi state = LOADED → dùng `async_refresh()`
+- **HA 2026.9.x:** `device_class: energy` + `state_class: measurement` bị **từ chối** —
+  log warning mỗi entity và **không dựng statistics**. Phải dùng `total` hoặc
+  `total_increasing` (đã sửa cho `today_kwh` ở v1.5.1)
+- **HA 2026.9.x:** `DataUpdateCoordinator.__init__` phát usage-report nếu **không**
+  truyền `config_entry=` (dựa vào ContextVar). Truyền `config_entry=entry` — và
+  việc này **không** gây reload vòng lặp, nó chỉ đăng ký `async_on_unload`
+- **HA 2026.9.x:** `DataUpdateCoordinator.async_shutdown` là **coroutine** → phải `await`
+- **HA 2026.9.x:** `ConfigEntry.version` / `.data` **không set trực tiếp được**
+  (`UPDATE_ENTRY_CONFIG_ENTRY_ATTRS`) → phải dùng `hass.config_entries.async_update_entry()`
 - **Jinja2 sandbox:** Không hỗ trợ `{% macro %}` — phải inline toàn bộ logic
 
 ---
@@ -728,14 +769,307 @@ File tham khảo dashboard YAML: `d:\Code\HA-Config\packages\dashboard_solar_24v
 
 5. **Không persist token** — Token chỉ lưu trong memory. Sau restart HA phải login lại. Nên persist token (encrypted) vào config entry data.
 
-### 7.3 Lỗi đã fix (từ SESSION.md)
+### 7.3 Lỗi đã fix — v1.2.1 (session 2026-04-30)
 
-Xem `SESSION.md` sections "Đã fix trong v1.2.0" và "Nhật ký công việc" để biết chi tiết các bug đã sửa:
-- Platform setup order (data trước khi setup sensor)
-- Config entry data loss
-- `__del__` unsafe, `assert` trong production, `FlowResult` deprecated
-- Debug log noise, entity rác trong registry
-- Entity naming dùng GUID → đổi sang PV1/PV2
+5 bug chặn integration hoạt động, phát hiện và sửa trong session 2026-04-30.
+
+#### Bug A — Thiếu per-device sensors trong Project mode
+
+**Phát hiện:** Entity registry có 27 entity nhưng chỉ 11 active — thiếu toàn bộ 18 sensor cho 2 thiết bị riêng lẻ.
+
+**Root cause:** Trong `__init__.py`, `async_forward_entry_setups` (platform setup) được gọi **TRƯỚC** `async_refresh`. Khi `sensor.py` chạy `async_setup_entry`, `coordinator.data` còn rỗng → `deviceLogs` không có → `device_guids = []` → không tạo được `SmartSolarProjectDeviceSensor` cho từng thiết bị.
+
+```python
+# Thứ tự SAI (v1.2.0):
+await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)  # sensor.py chạy, data rỗng
+await coordinator.async_config_entry_first_refresh()                    # data mới có
+
+# Thứ tự ĐÚNG (v1.2.1):
+await coordinator.async_refresh()                                       # data có trước
+await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS) # sensor.py thấy deviceLogs
+```
+
+**Cạm bẫy:** `async_config_entry_first_refresh()` bị HA 2026.4.4 từ chối khi state = LOADED (chỉ chấp nhận `SETUP_IN_PROGRESS`) → phải dùng `async_refresh()` (không check state).
+
+#### Bug B — Config entry mất field ("Missing device_type in configuration")
+
+**Root cause:** Config entry data CHỈ CÒN `username` và `password`; `mode`, `device_type`, `project_id`, `chipset_ids` biến mất. Không xác định được nguyên nhân gốc — nghi do migration từ version cũ, hoặc `async_update_entry` trong `number.py` ghi đè data.
+
+**Fix:** Sửa trực tiếp `/config/.storage/core.config_entries` bằng Python:
+```python
+e["data"]["mode"] = "project"
+e["data"]["device_type"] = 2           # DEVICE_TYPE_MANH_QUAN
+e["data"]["project_id"] = "1072"
+e["data"]["chipset_ids"] = []
+```
+Suy luận từ `unique_id` = `vokupt_project_2_1072`.
+
+#### Bug C — `AttributeError: '_device_discovery_callbacks'`
+
+**Root cause:** v1.2.0 xóa `_device_discovery_callbacks` khỏi `__slots__`/`__init__` (coi là dead code) nhưng `_async_update_data` (dòng 91-95) vẫn gọi nó.
+
+**Fix:** Xóa vòng lặp callback khỏi `_async_update_data`.
+
+#### Bug D — 29 entity rác trong registry
+
+Entity mồ côi từ các lần cài đặt cũ: 9 × `sensor.pv_voltage` (không prefix), 9 × `sensor.pv_voltage_<GUID>`, `update.smartsolar_mppt_update`, `switch.smartsolar_mppt_pre_release`.
+
+**Fix:** Lọc entity_registry, giữ entity có `smartsolar_mppt_project` trong `unique_id`, xóa phần còn lại.
+
+#### Bug E — Entity naming dùng GUID
+
+**Vấn đề:** Tên entity dạng `PV Voltage (14756976)` — không biết GUID nào là thiết bị vật lý nào.
+
+**Fix:** Thêm tham số `device_index` vào `SmartSolarSensor.__init__`. Trong project mode, device đánh số theo thứ tự xuất hiện trong `deviceLogs` → index 1 = `PV1 Voltage`, index 2 = `PV2 Voltage`, synthesis = `Tổng PV Voltage`.
+
+#### Đã fix trong v1.2.0 (session trước)
+
+| Vấn đề | Fix |
+|--------|-----|
+| `NameError` — biến `mode`/`project_id`/`chipset_ids` dùng trước khi khai báo | Đưa khai báo lên trước debug log |
+| `assert` trong production code (config_flow.py) | Thay bằng `if ... is None: raise ValueError(...)` |
+| `FlowResult` deprecated | Thay bằng `ConfigFlowResult` |
+| API session leak — `test_connection()` không gọi `close()` | Thêm `finally: await self.close()` |
+| `__del__` method unsafe trong api.py | Đã xóa |
+| Private API access trong number.py (`_unsub_refresh`, `_schedule_refresh`) | Dùng public API `update_interval` |
+| `@cached_property` name override không cần thiết | Đã xóa, dùng `_attr_name` |
+| `DATA_STREAM_INDICES`, `CONF_UPDATE_INTERVAL` unused | Đã xóa |
+| Debug log noise (~650 logs/min) | Giảm xuống 0 trong hot path |
+| Thiếu `__slots__` | Đã thêm vào coordinator, sensors, number |
+| Thiếu `MINOR_VERSION` | `MINOR_VERSION = 1` |
+| `STATUS_MAPPING` hardcoded tiếng Việt | Đổi sang English keys |
+| `DeviceInfo` trùng lặp 3 nơi | `build_device_info()` shared helper trong const.py |
+| `from datetime import timedelta` import lười trong number.py | Đưa lên module top |
+
+### 7.5 Cạm bẫy khi thao tác với HA (rút ra từ session 2026-04-30)
+
+- **Không dùng `grep -v` để xóa dòng khỏi JSON** — làm hỏng cấu trúc. Luôn `json.load()` → sửa → `json.dump()`.
+- **Kiểm tra cả `entities` và `deleted_entities`** trong entity_registry.
+- **File trong `/config/.storage/` phải có owner `root:root`.**
+- **Không dùng `async_config_entry_first_refresh`** khi config entry đã LOADED — dùng `async_refresh()`.
+- **Print UTF-8 từ Windows sang console** gây lỗi cp1252. Ghi output ra file rồi đọc lại.
+- **Deploy code:** base64 encode → SSH paramiko → decode trên host → `sudo rm -rf __pycache__` → restart HA. (Nay dùng `upload_to_ha.py`.)
+
+### 7.4 Đã fix trong v1.5.1 (2026-09-27) — audit toàn diện
+
+> Nguồn: [CLAUDE.md](CLAUDE.md#v151--audit-fixes-2026-09-27) (bảng đầy đủ 12 bug).
+> Test: **261 passed** (trước 121). `ruff` + `mypy` sạch, `mypy` nay là gate cứng trong CI.
+
+#### 7.4.1 Phát hiện quan trọng nhất — HA đang chạy bản CŨ
+
+`/homeassistant/custom_components/smartsolar_mppt/` trên HA là bản **1.3.0 tải từ 2026-06-27**,
+KHÔNG phải bản trong repo:
+
+| Kiểm tra | Kết quả |
+|---|---|
+| `manifest.json` trên HA | `"version": "1.3.0"`... (thực tế `1.4.0` trong manifest cũ) |
+| `grep -c peak_power` trên HA | **0** ở cả `coordinator.py`, `sensor.py`, `const.py` |
+| `sw_version` trong `build_device_info()` trên HA | `"1.3.0"` |
+| md5 9 file `.py` | **DRIFT toàn bộ** so với repo |
+
+**Hệ quả đo được:** 6 sensor `*_peak_power_today` / `*_avg_power_today` /
+`*_production_hours_today` **tồn tại trong entity registry nhưng mãi mãi
+`unavailable`** — vì bản đang chạy không hề có class `SmartSolarStatsSensor`.
+Chúng là entity mồ côi, không phải sensor lỗi. Sau khi deploy bản mới, cả 6
+sensor báo số bình thường.
+
+**Bài học:** "sensor `unavailable`" chưa chắc là bug logic — phải so **md5 file
+đang chạy** với repo trước khi đọc code. Backup bản cũ nằm ở
+`_local_archive/deployed/smartsolar_mppt_20260927-222119.tar.gz`.
+
+#### 7.4.2 Điện áp pin tổng bị CỘNG thay vì lấy trung bình
+
+`SmartSolarProjectSynthesisSensor` cộng mọi sensor không nằm trong
+`_ADDITIVE_SENSORS`, nên `total_battery_voltage` = 26.6 + 26.4 = **53.0 V** trên
+hệ 24 V khi `synthesisStreams` thiếu field đó. Đã thay bằng bảng
+`const.AGGREGATION`:
+
+| Chiến lược | Sensor |
+|---|---|
+| `sum` | pv_current, bat_current, charge_power, today_kwh, total_kwh |
+| `average` | pv_voltage, bat_voltage, temperature, signal_quality |
+| `max` | status (xấu nhất) |
+
+#### 7.4.3 Sensor `status` tổng luôn `unknown`
+
+`_calculate_from_device_logs()` map status → chuỗi **trước khi** tổng hợp, rồi
+cộng chuỗi → luôn `None`. Nay tổng hợp **mã số** trước, map text sau
+(`_device_log_value(..., raw_status=True)`).
+
+#### 7.4.4 MQTT nhận dữ liệu của NGƯỜI KHÁC
+
+Broker `mqttx.smartsolar.io.vn` **dùng chung cho mọi khách hàng SmartSolar**.
+Probe `manhquan/device/mppt_charger/log/+/#` thấy hàng trăm thiết bị lạ
+(GUID `8646193`, `1186348`, `14901856`, ...). Code cũ gọi
+`_merge_mqtt_into_data()` cho **mọi** GUID nhận được → có thể chèn deviceLog lạ
+vào dữ liệu của mình. Nay có `_is_tracked_device()` chặn.
+
+#### 7.4.5 Retry/backoff là code chết
+
+`_request_with_retry()` được viết đầy đủ (exponential backoff, không retry
+401/404) nhưng **không method nào gọi nó**. Nay mọi GET đi qua
+`_authed_get()` → `_request_with_retry()`.
+
+#### 7.4.6 `async_shutdown()` là coroutine nhưng không được await
+
+`async_unload_entry` gọi `coordinator.async_shutdown()` trần → timer poll và
+listener nửa đêm **rò rỉ mỗi lần reload**. Nay `await`.
+
+#### 7.4.7 `today_kwh` khai báo state_class sai
+
+`state_class: measurement` + `device_class: energy` bị HA từ chối: log cảnh báo
+mỗi entity và **không dựng statistics**. Đổi sang `total_increasing` (reset lúc
+nửa đêm = chu kỳ công tơ mới).
+
+#### 7.4.8 Nhãn PV1/PV2 không ổn định
+
+Thứ tự `deviceLogs` do server trả về không đảm bảo → tên entity (và entity_id)
+đảo giữa các lần restart. Nay sort GUID **theo số** (`guid_sort_key`):
+`547611` → PV1, `14756976` → PV2.
+
+#### 7.4.9 Giới hạn đã biết — sạc 40A không báo sóng WiFi
+
+API trả `signalQuality: null` cho GUID `14756976` (đo trực tiếp
+`/Metric/ProjectMetrics`), và firmware này phát MQTT dạng cũ
+(`command: updateDeviceLog`) **không có** field `signalQuality`. Vì vậy
+`sensor.…_pv2_wifi_signal = unknown` là **đúng**, không phải bug. Sạc 60A
+(`547611`) phát dạng mới `update_device_metrics` → có `signalQuality` → báo 100%.
+
+#### 7.4.10 Công cụ mới
+
+| File | Việc |
+|---|---|
+| `deploy_to_ha.py` | Gate đầy đủ: ruff + format + mypy + pytest → backup → upload → xoá `__pycache__` → restart → chờ API sống lại |
+| `verify_live.py` | Assert entity trên HA thật: sensor stats có số, điện áp pin không bị cộng, PV1 = GUID nhỏ, WiFi đúng nguồn |
+| `tests/test_e2e.py` | Chạy `async_setup_entry` / `async_unload_entry` thật trên `HomeAssistant` core thật. **Không** dùng `pytest-homeassistant-custom-component` vì package đó import `fcntl` (chỉ POSIX) → không load được trên Windows |
+| `.venv` | Python **3.14** — HA 2026.x yêu cầu `>= 3.14.2`, và bản HA trên PyPI chỉ có tới 2025.1 cho Python 3.12 |
+
+#### 7.4.11 Đã fix trong v1.4.0
+
+- **`sw_version` hiển thị sai "1.3.0"** → `sw_version` nay lấy từ `const.VERSION`
+  (1.5.1), một nguồn sự thật duy nhất cùng `manifest.json` / `pyproject.toml`.
+
+### 7.6 `async_set_updated_data` bóp chết HTTP poll (fix 2026-09-12)
+
+**Triệu chứng:** recorder ghi ~2 lần/giây cho mỗi sensor smartsolar (1,740 lần/giờ trên một sensor, so với kỳ vọng ~720 khi `update_interval = 5s`). smartsolar chiếm **32% tổng số state** của toàn hệ thống.
+
+**Nguyên nhân gốc [VERIFIED-HIGH]** — `coordinator.async_process_mqtt_data()` gọi `self.async_set_updated_data(self.data)` cho **mỗi message MQTT**:
+
+```python
+# coordinator.py (bản cũ) — dòng 70
+if self.data is not None:
+    self._merge_mqtt_into_data(self.data, device_guid, data)
+    self.async_set_updated_data(self.data)   # <-- THỦ PHẠM
+```
+
+Đọc source HA (`helpers/update_coordinator.py`):
+
+```python
+def async_set_updated_data(self, data):
+    """Manually update data, notify listeners and reset refresh interval."""
+    self._async_unsub_refresh()        # <-- HUY timer poll
+    self._debounced_refresh.async_cancel()
+    self.data = data
+    ...
+    if self._listeners:
+        self._schedule_refresh()       # <-- DAT LAI timer poll tu dau
+    self.async_update_listeners()
+```
+
+`always_update=False` **không cứu được** — nó chỉ được kiểm tra trong `_async_refresh()` (đường poll định kỳ), còn `async_set_updated_data()` gọi thẳng `async_update_listeners()`.
+
+**Hai hậu quả, không phải một:**
+
+| Hậu quả | Bằng chứng |
+|---|---|
+| Recorder ghi ~2 state/s/sensor | 1,740 lần/giờ vs kỳ vọng 720 |
+| **HTTP poll chết hoàn toàn** | Đo 40s: **0** poll bắt đầu, **0** kết thúc, **0** lỗi |
+
+Thiết bị phát ~2 msg/s trong khi `update_interval = 5s` → timer bị reset trước khi kịp nổ → `_async_update_data()` không bao giờ chạy. Hệ quả phụ: `refresh_token_if_needed()` cũng không chạy, và API cloud chết sẽ **không** được phát hiện (vì `async_set_updated_data` đặt `last_update_success = True`).
+
+**Cách đo** (bật debug runtime, không cần restart):
+```python
+POST /api/services/logger/set_level {"custom_components.smartsolar_mppt": "debug"}
+# đếm trong log: "SmartSolar API Update Complete" (poll) vs
+#                "Manually updated SmartSolar MPPT data" (MQTT notify)
+```
+
+**Fix:** thay `async_set_updated_data()` bằng `async_update_listeners()` trực tiếp, có throttle 1Hz bằng `async_call_later`. Giá trị vẫn merge vào `self.data` ở **mọi** message — chỉ nhịp *notify entity* bị chặn.
+
+```python
+@callback
+def _schedule_mqtt_notify(self) -> None:
+    if self._mqtt_notify_unsub is not None:
+        return                      # dang trong cooldown 1s
+    self.async_update_listeners()   # KHONG dung den timer poll
+    self._mqtt_notify_unsub = async_call_later(
+        self.hass, MQTT_NOTIFY_THROTTLE, self._async_mqtt_notify_done)
+```
+
+**Kết quả sau fix:**
+
+| Chỉ số | Trước | Sau |
+|---|---|---|
+| HTTP poll / 40s | **0** | **7** (đúng nhịp 5s) |
+| Token refresh | không chạy | ✅ `Token is still valid` |
+| Lỗi API | không phát hiện được | 0 |
+| HA container | — | CPU 1.56%, RAM 788 MB |
+
+**⚠️ Bài học quan trọng — throttle KHÔNG giảm recorder:**
+
+Số state ghi vẫn ~3,500/15 phút (26.6% tổng), **không đổi**. Lý do: giá trị **dao động thật** ~1 lần/giây, không phải nhiễu float.
+
+```
+pv2_pv_voltage (8 mẫu liên tiếp):
+  26.09000015 / 26.13999939 / 26.09000015 / 26.18000031
+  26.04999924 / 26.09000015 / 26.04999924 / 26.18000031
+```
+
+Đo `count(distinct state)` trong 15 phút: **10 giá trị khác nhau thật**; làm tròn 2 chữ số thập phân chỉ cắt được **15%**. Vì vậy **làm tròn `native_value` không phải đòn bẩy** cho bài toán này.
+
+Nếu muốn giảm recorder thật sự, các lựa chọn còn lại là:
+1. Nâng `update_interval` (number entity, 1–30s) — đánh đổi độ mịn dữ liệu.
+2. `recorder.exclude` cho các sensor smartsolar ít giá trị.
+3. Chấp nhận — 1.56% CPU không phải vấn đề hiệu năng.
+
+**Thứ tự ưu tiên đã đúng:** sửa đường MQTT trước (nó là lỗi đúng/sai, không phải đánh đổi), rồi mới cân nhắc giảm tần suất (đánh đổi thật).
+
+### 7.7 Bật/tắt DEBUG runtime — và cái bẫy khi đọc lại log
+
+**Cách bật DEBUG không cần restart:**
+```python
+POST /api/services/logger/set_level
+{"custom_components.smartsolar_mppt": "debug"}
+```
+
+Nhưng **cẩn thận khi diễn giải log sau đó:**
+
+1. **Phải tắt lại bằng `warning`, không phải `info`** nếu config gốc không đặt gì cho component đó. Trong HA này config đặt `custom_components.smartsolar_mppt: info`, nên khi tắt phải trả về **`info`** cho khớp. Trả về `warning` là lệch config.
+
+2. **Log DEBUG trong quá khứ không chứng minh config đang bật DEBUG.** Em đã suýt kết luận sai rằng "flood DEBUG là do integration". Thực tế: cửa sổ DEBUG 02:23:14–02:23:49 là **do chính probe của em bật**, không phải config.
+
+   **Cách phân biệt:** đọc `configuration.yaml` phần `logger:` xem mức đặt cho component, rồi so với mốc thời gian. Nếu DEBUG chỉ xuất hiện trong một cửa sổ ngắn có mốc trùng với lúc chạy probe → đó là do probe.
+
+   ```yaml
+   logger:
+     default: warning
+     logs:
+       custom_components.smartsolar_mppt: info   # <- muc THAT
+   ```
+
+3. **`docker logs` giữ log cũ hơn `home-assistant.log`** — HA 2026.x không ghi file log nữa (log ra stdout). Lấy bằng `sudo docker logs --tail N homeassistant`, lọc phía PC1. Endpoint `/api/error_log` **đã bị bỏ** (trả 404).
+
+**Hệ quả phụ đáng chú ý:** đổi log level phát sự kiện `logging_changed`, và **ESPHome crash** khi nhận sự kiện đó:
+
+```
+ERROR (MainThread) [homeassistant.core] Error running job:
+  <Job listen logging_changed ... ESPHomeManager._async_handle_logging_changed>
+  File ".../components/esphome/manager.py", line 1083, in _async_handle_logging_changed
+    self._async_subscribe_logs(new_log_level)
+  File ".../components/esphome/manager.py", line 576, in _async_subscribe_logs
+```
+
+Đây là **bug HA core 2026.9.1**, không phải lỗi config — mỗi lần đổi log level (kể cả từ UI Developer Tools) đều sinh 1 ERROR. Không ảnh hưởng chức năng, nhưng làm bẩn log audit.
 
 ---
 
@@ -786,8 +1120,8 @@ Xem `SESSION.md` sections "Đã fix trong v1.2.0" và "Nhật ký công việc" 
 ### 8.3 Code Quality Targets
 
 ```
-Python: 3.12+
-Home Assistant: 2024.1+
+Python: 3.14+
+Home Assistant: 2026.9+
 Dependencies: aiohttp (không thêm dependency nặng)
 Test coverage: pytest + pytest-asyncio cho API client
 Type hints: mypy strict
@@ -806,15 +1140,22 @@ Linting: ruff
 
 ## Appendix A: File Manifest
 
-### Trong `D:\Code\SmartSolar\`
+### Trong `D:\Code\HA-Config\smartsolar_mppt\` (root-level project)
 | File | Purpose |
 |------|---------|
 | `CLAUDE.md` | Hướng dẫn cho AI agents |
-| `SESSION.md` | Nhật ký phát triển (2026-04-30) |
 | `README.md` | README chuyên nghiệp |
 | `KNOWLEDGE.md` | File này — kiến thức tổng hợp |
-| `Home.md` | GitHub Wiki home |
 | `logo.png` | Logo integration |
+| `pyproject.toml` | Cấu hình ruff / mypy / pytest + extra `[test]` (ghim `homeassistant`) |
+| `deploy_to_ha.py` | **Deploy có gate**: ruff + format + mypy + pytest → backup → upload → restart → chờ API |
+| `verify_live.py` | Assert entity trên HA thật sau deploy |
+| `upload_to_ha.py` | Uploader tối giản (không gate) |
+| `tests/` | 261 test, gồm `test_e2e.py` chạy entry thật trên HA core thật |
+| `_local_archive/deployed/` | Backup bản đã deploy trên HA (local-only, gitignored) |
+| `.venv/` | Python 3.14 — HA 2026.x yêu cầu `>= 3.14.2` |
+
+> `SESSION.md`, `Home.md`, `AGENTS.md` đã được gộp vào file này và xoá (2026-09-11).
 
 ### Trong `D:\Code\HA-Config\packages\`
 | File | Purpose |
@@ -839,6 +1180,7 @@ Linting: ruff
 
 ### Deploy Python code lên HA
 ```python
+import os
 import paramiko, base64
 
 client = paramiko.SSHClient()
@@ -892,8 +1234,8 @@ sudo cat /config/.storage/core.config_entries | python3 -m json.tool
 | System Info | `D:\Code\System_info\` | Credentials, network topology |
 | Shared Scripts | `D:\Code\scripts\` | `vm_inventory.py`, `vm-config.sh` |
 | Lumentree | `D:\Code\Lumentree\` | Inverter cũ (đã thay bằng Luxpower) |
-| MikroTik HA | `D:\Code\mikrotik-ha\` | Router monitoring integration |
+| MikroTik HA | HACS `tomaae/homeassistant-mikrotik_router` | Router monitoring integration (fork ngoviet/mikrotik-ha đã xoá 2026-09-11) |
 
 ---
 
-*Last updated: 2026-06-22 — Compiled từ code, SESSION.md, HA packages, và CDP API discovery.*
+*Last updated: 2026-09-27 — audit v1.5.1 (12 bug đã sửa, 261 test, deploy + verify live).*

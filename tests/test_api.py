@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest
@@ -14,7 +16,52 @@ from custom_components.smartsolar_mppt.api import (
     SmartSolarAuthenticationError,
     SmartSolarConnectionError,
     SmartSolarNotFoundError,
+    _parse_expiration,
 )
+from custom_components.smartsolar_mppt.const import RETRY_MAX_ATTEMPTS
+
+
+class _FakeResponse:
+    """Stand-in for aiohttp.ClientResponse used inside _request_with_retry."""
+
+    def __init__(self, status: int, payload: Any) -> None:
+        self.status = status
+        self._body = json.dumps(payload).encode()
+
+    async def read(self) -> bytes:
+        return self._body
+
+    async def json(self) -> Any:
+        return json.loads(self._body.decode())
+
+    async def text(self) -> str:
+        return self._body.decode()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc: Any) -> bool:
+        return False
+
+
+class _FakeSession:
+    """Returns queued responses; exceptions may be queued too."""
+
+    def __init__(self, results: list[Any]) -> None:
+        self._results = list(results)
+        self.requests = 0
+
+    def request(self, _method: str, _url: str, **_kwargs: Any) -> Any:
+        self.requests += 1
+        result = self._results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        status, payload = result
+        return _FakeResponse(status, payload)
+
+    def post(self, _url: str, **_kwargs: Any) -> Any:
+        """Stand-in for session.post() used by login()."""
+        return self.request("POST", _url)
 
 
 class TestSmartSolarAPIError:
@@ -161,3 +208,162 @@ class TestSmartSolarAPI:
         api.login = AsyncMock(side_effect=SmartSolarAPIError("fail"))
         result = await api.test_connection()
         assert result is False
+
+    @pytest.mark.asyncio
+    async def test_test_connection_propagates_auth_error(self):
+        """test_connection re-raises SmartSolarAuthenticationError for a 401."""
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api.login = AsyncMock(side_effect=SmartSolarAuthenticationError("bad", 401))
+        with pytest.raises(SmartSolarAuthenticationError):
+            await api.test_connection()
+
+    @pytest.mark.asyncio
+    async def test_no_token_when_login_returns_no_token(self):
+        """A 200 login without a token is an error, not a silent success."""
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=_FakeSession([(200, {})]))
+        with pytest.raises(SmartSolarAPIError, match="no token"):
+            await api.login()
+
+
+class TestParseExpiration:
+    """Tests for the token-expiry parser.
+
+    Mixing naive and tz-aware datetimes raises TypeError, so a naive value from
+    the API used to break ``refresh_token_if_needed`` completely.
+    """
+
+    def test_z_suffix_is_utc_aware(self):
+        parsed = _parse_expiration("2026-10-27T15:14:48Z")
+        assert parsed is not None
+        assert parsed.tzinfo is not None
+        assert parsed.utcoffset() == timedelta(0)
+
+    def test_offset_is_preserved(self):
+        parsed = _parse_expiration("2026-10-27T15:14:48+07:00")
+        assert parsed is not None
+        assert parsed.utcoffset() == timedelta(hours=7)
+
+    def test_naive_string_is_assumed_utc(self):
+        parsed = _parse_expiration("2026-10-27T15:14:48")
+        assert parsed is not None
+        assert parsed.tzinfo is not None
+        assert parsed.utcoffset() == timedelta(0)
+
+    @pytest.mark.parametrize("value", [None, "", "not-a-date", 12345, {}])
+    def test_invalid_values_return_none(self, value):
+        assert _parse_expiration(value) is None
+
+    @pytest.mark.asyncio
+    async def test_naive_expiry_does_not_break_refresh(self):
+        """A naive expiry must still compare against an aware utcnow()."""
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._token = "t"
+        api._token_expiry = _parse_expiration("2026-10-27T15:14:48")
+        api.login = AsyncMock()
+        await api.refresh_token_if_needed()  # must not raise TypeError
+        assert api.login.await_count in (0, 1)
+
+
+class TestRequestRetry:
+    """Tests for _request_with_retry and its use by the public methods."""
+
+    @pytest.mark.asyncio
+    async def test_retries_on_server_error_then_succeeds(self):
+        """5xx responses are retried with backoff until one succeeds."""
+        session = _FakeSession([(503, {"e": 1}), (502, {"e": 2}), (200, {"ok": True})])
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=session)
+
+        with patch("custom_components.smartsolar_mppt.api.asyncio.sleep", new=AsyncMock()) as sleep:
+            response = await api._request_with_retry("GET", "https://example.invalid/x")
+
+        assert response.status == 200
+        assert await response.json() == {"ok": True}
+        assert session.requests == 3
+        assert sleep.await_count == 2  # one wait between each of the 3 attempts
+
+    @pytest.mark.asyncio
+    async def test_gives_up_after_max_attempts(self):
+        """Persistent 5xx raises SmartSolarAPIError with the server status."""
+        session = _FakeSession([(500, {}), (500, {}), (500, {})])
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=session)
+
+        with (
+            patch("custom_components.smartsolar_mppt.api.asyncio.sleep", new=AsyncMock()),
+            pytest.raises(SmartSolarAPIError) as err,
+        ):
+            await api._request_with_retry("GET", "https://example.invalid/x")
+
+        assert err.value.status_code == 500
+        assert session.requests == RETRY_MAX_ATTEMPTS
+
+    @pytest.mark.asyncio
+    async def test_retries_on_connection_error(self):
+        """Network errors are retried."""
+        session = _FakeSession([aiohttp.ClientConnectionError("boom"), (200, {"ok": True})])
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=session)
+
+        with patch("custom_components.smartsolar_mppt.api.asyncio.sleep", new=AsyncMock()):
+            response = await api._request_with_retry("GET", "https://example.invalid/x")
+
+        assert response.status == 200
+        assert session.requests == 2
+
+    @pytest.mark.asyncio
+    async def test_does_not_retry_404(self):
+        """404 is returned immediately so callers can fail fast."""
+        session = _FakeSession([(404, {"error": "nope"})])
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=session)
+
+        response = await api._request_with_retry("GET", "https://example.invalid/x")
+
+        assert response.status == 404
+        assert session.requests == 1
+
+    @pytest.mark.asyncio
+    async def test_does_not_retry_401(self):
+        """401 is returned immediately."""
+        session = _FakeSession([(401, {})])
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=session)
+
+        response = await api._request_with_retry("GET", "https://example.invalid/x")
+
+        assert response.status == 401
+        assert session.requests == 1
+
+    @pytest.mark.asyncio
+    async def test_project_404_raises_not_found(self):
+        """get_project_metrics turns a 404 into SmartSolarNotFoundError."""
+        session = _FakeSession([(404, {"error": "missing"})])
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=session)
+        api._token = "t"
+        api._token_expiry = datetime.now(UTC) + timedelta(days=30)
+
+        with pytest.raises(SmartSolarNotFoundError) as err:
+            await api.get_project_metrics("9999")
+        assert err.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_get_metrics_without_chipset_ids_raises(self):
+        """Empty chipset_ids fails before touching the network."""
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        with pytest.raises(SmartSolarAPIError, match="chipset_ids"):
+            await api.get_metrics(device_type=2, chipset_ids=[], mode="device")
+
+    @pytest.mark.asyncio
+    async def test_get_metrics_normalizes_device_guid_to_str(self):
+        """deviceGuid values are coerced to str for stable matching."""
+        session = _FakeSession([(200, {"deviceLogs": [{"deviceGuid": 547611}]})])
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=session)
+        api._token = "t"
+        api._token_expiry = datetime.now(UTC) + timedelta(days=30)
+
+        data = await api.get_metrics(device_type=2, chipset_ids=["547611"], mode="project")
+        assert data["deviceLogs"][0]["deviceGuid"] == "547611"

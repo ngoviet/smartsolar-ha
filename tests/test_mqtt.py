@@ -133,6 +133,7 @@ class TestMQTTMessageParsing:
     def _make_mock_message(self, topic: str, payload: dict):
         """Create a mock aiomqtt Message."""
         import json
+
         msg = MagicMock()
         msg.topic = topic
         msg.payload = json.dumps(payload).encode("utf-8")
@@ -174,6 +175,7 @@ class TestMQTTMessageParsing:
     async def test_handle_non_dict_payload(self):
         """Non-dict payload (e.g., array or string) is skipped."""
         import json
+
         client = self._make_client()
         msg = MagicMock()
         msg.topic = "manhquan/device/mppt_charger/log/45a/000372"
@@ -195,6 +197,154 @@ class TestMQTTMessageParsing:
         client._on_data.assert_called_once()
         assert client._on_data.call_args[0][0] == "547611"
 
+    @pytest.mark.asyncio
+    async def test_trailing_slash_on_topic_is_tolerated(self):
+        """A trailing slash must not produce an empty GUID."""
+        client = self._make_client()
+        msg = self._make_mock_message(
+            "manhquan/device/mppt_charger/log/45a/547611/",
+            {"pv_voltage": 50.0},
+        )
+
+        await client._handle_message(msg)
+        assert client._on_data.call_args[0][0] == "547611"
+
+    @pytest.mark.asyncio
+    async def test_data_streams_format_extracts_signal_quality(self):
+        """The live payload carries signalQuality at the TOP level.
+
+        It is not one of the dataStreams, so it has to be picked up separately
+        or the WiFi sensor stays unknown forever.
+        """
+        client = self._make_client()
+        msg = self._make_mock_message(
+            "manhquan/device/mppt_charger/log/45a/547611",
+            {
+                "command": "update_device_metrics",
+                "deviceGuid": "547611",
+                "signalQuality": 56,
+                "messagesCounter": 1064144,
+                "dataStreams": [
+                    {"name": "pv_voltage", "value": 4.24},
+                    {"name": "bat_voltage", "value": 26.26},
+                    {"name": "charge_power", "value": 0},
+                ],
+            },
+        )
+
+        await client._handle_message(msg)
+
+        normalized = client._on_data.call_args[0][1]
+        assert normalized["signal_quality"] == 56
+        assert normalized["pv_voltage"] == 4.24
+        assert normalized["bat_voltage"] == 26.26
+
+    @pytest.mark.asyncio
+    async def test_data_streams_format_ignores_bookkeeping_fields(self):
+        """command/deviceGuid/messagesCounter are not sensors."""
+        client = self._make_client()
+        msg = self._make_mock_message(
+            "manhquan/device/mppt_charger/log/45a/547611",
+            {
+                "command": "updateDeviceLog",
+                "deviceGuid": "547611",
+                "messagesCounter": 12,
+                "dataStreams": [{"name": "temperature", "value": 29}],
+            },
+        )
+
+        await client._handle_message(msg)
+
+        assert client._on_data.call_args[0][1] == {"temperature": 29}
+
+    @pytest.mark.asyncio
+    async def test_update_device_log_format_is_parsed(self):
+        """Older firmware sends updateDeviceLog with unit/stream fields."""
+        client = self._make_client()
+        msg = self._make_mock_message(
+            "manhquan/device/mppt_charger/log/45a/3272656",
+            {
+                "command": "updateDeviceLog",
+                "deviceGuid": "3272656",
+                "dataStreams": [
+                    {"stream": 0, "name": "pv_voltage", "value": 4.760000229, "unit": "Volt"},
+                    {"stream": 5, "name": "today_kwh", "value": 1.190999985, "unit": "kWh"},
+                    {"stream": 8, "name": "status", "value": 2, "unit": "None"},
+                ],
+            },
+        )
+
+        await client._handle_message(msg)
+
+        normalized = client._on_data.call_args[0][1]
+        assert normalized["pv_voltage"] == pytest.approx(4.760000229)
+        assert normalized["today_kwh"] == pytest.approx(1.190999985)
+        assert normalized["status"] == 2
+
+    @pytest.mark.asyncio
+    async def test_data_stream_entries_without_name_are_skipped(self):
+        """A malformed stream element must not abort the whole payload."""
+        client = self._make_client()
+        msg = self._make_mock_message(
+            "manhquan/device/mppt_charger/log/45a/547611",
+            {
+                "dataStreams": [
+                    {"name": "pv_voltage", "value": 5.0},
+                    {"stream": 1, "value": 1.0},  # missing name
+                    {"name": "bat_voltage", "value": None},
+                    "junk",
+                ]
+            },
+        )
+
+        await client._handle_message(msg)
+
+        assert client._on_data.call_args[0][1] == {"pv_voltage": 5.0}
+
+    @pytest.mark.asyncio
+    async def test_numeric_guid_in_topic_is_forwarded_as_string(self):
+        """GUIDs are matched as strings everywhere."""
+        client = self._make_client()
+        msg = self._make_mock_message(
+            "manhquan/device/mppt_charger/log/45a/000372",
+            {"pv_voltage": 1.0},
+        )
+
+        await client._handle_message(msg)
+        guid = client._on_data.call_args[0][0]
+        assert isinstance(guid, str)
+        assert guid == "000372"
+
+    @pytest.mark.asyncio
+    async def test_flat_format_maps_all_known_fields(self):
+        """Older firmware sends a flat dict without dataStreams."""
+        client = self._make_client()
+        msg = self._make_mock_message(
+            "manhquan/device/mppt_charger/log/45a/547611",
+            {"charging_power": 300.0, "yield_today": 1.5, "yield_total": 42.0},
+        )
+
+        await client._handle_message(msg)
+
+        assert client._on_data.call_args[0][1] == {
+            "charge_power": 300.0,
+            "today_kwh": 1.5,
+            "total_kwh": 42.0,
+        }
+
+    @pytest.mark.asyncio
+    async def test_empty_data_streams_list_falls_back_to_flat_format(self):
+        """A payload with an empty dataStreams must still be processed."""
+        client = self._make_client()
+        msg = self._make_mock_message(
+            "manhquan/device/mppt_charger/log/45a/547611",
+            {"dataStreams": [], "charging_power": 10.0},
+        )
+
+        await client._handle_message(msg)
+
+        assert client._on_data.call_args[0][1]["charge_power"] == 10.0
+
 
 class TestCoordinatorMQTTIntegration:
     """Tests for coordinator MQTT data processing."""
@@ -202,9 +352,7 @@ class TestCoordinatorMQTTIntegration:
     @pytest.mark.asyncio
     async def test_async_process_mqtt_data_stores_in_cache(self, mock_coordinator):
         """MQTT data is stored in _mqtt_data cache."""
-        await mock_coordinator.async_process_mqtt_data(
-            "547611", {"pv_voltage": 50.0}
-        )
+        await mock_coordinator.async_process_mqtt_data("547611", {"pv_voltage": 50.0})
         assert "547611" in mock_coordinator._mqtt_data
         assert mock_coordinator._mqtt_data["547611"]["pv_voltage"] == 50.0
 
@@ -214,9 +362,7 @@ class TestCoordinatorMQTTIntegration:
         from tests.conftest import SAMPLE_PROJECT_RESPONSE
 
         mock_coordinator.data = SAMPLE_PROJECT_RESPONSE.copy()
-        await mock_coordinator.async_process_mqtt_data(
-            "547611", {"pv_voltage": 99.9}
-        )
+        await mock_coordinator.async_process_mqtt_data("547611", {"pv_voltage": 99.9})
         # Check that device 547611 was updated in coordinator.data
         for log in mock_coordinator.data["deviceLogs"]:
             if log["deviceGuid"] == "547611":

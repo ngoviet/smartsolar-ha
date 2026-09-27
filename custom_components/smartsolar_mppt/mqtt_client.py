@@ -14,7 +14,7 @@ import json
 import logging
 import ssl
 from collections.abc import Callable, Coroutine
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .const import (
     MQTT_BROKER,
@@ -27,13 +27,20 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-try:
+# aiomqtt is an optional dependency: the integration degrades to REST-only
+# polling when it is missing. The fallback is bound through an explicitly
+# annotated name so the module-level type is the same whether or not the
+# package is installed (otherwise mypy reports an assignment error on one
+# machine and an unused-ignore error on the other).
+if TYPE_CHECKING:
     import aiomqtt
+else:
+    try:
+        import aiomqtt
+    except ImportError:  # pragma: no cover - exercised only without the extra
+        aiomqtt = None
 
-    HAS_AIOMQTT = True
-except ImportError:
-    HAS_AIOMQTT = False
-    aiomqtt = None  # type: ignore[assignment]
+HAS_AIOMQTT = aiomqtt is not None
 
 CallbackType = Callable[[str, dict[str, Any]], Coroutine[Any, Any, None]]
 
@@ -47,8 +54,15 @@ class SmartSolarMQTTClient:
     """
 
     __slots__ = (
-        "_device_guids", "_on_data", "_client", "_connected",
-        "_running", "_task", "_username", "_password", "_websocket_path",
+        "_device_guids",
+        "_on_data",
+        "_client",
+        "_connected",
+        "_running",
+        "_task",
+        "_username",
+        "_password",
+        "_websocket_path",
     )
 
     def __init__(
@@ -100,8 +114,7 @@ class SmartSolarMQTTClient:
         """Start MQTT connection in background."""
         if not HAS_AIOMQTT:
             _LOGGER.warning(
-                "aiomqtt not installed — MQTT real-time updates disabled. "
-                "Install with: pip install aiomqtt>=2.0"
+                "aiomqtt not installed — MQTT real-time updates disabled. Install with: pip install aiomqtt>=2.0"
             )
             return
 
@@ -111,11 +124,13 @@ class SmartSolarMQTTClient:
 
         self._running = True
         self._task = asyncio.create_task(self._message_loop())
+        device_list = ", ".join(self._device_guids[:5])
+        if len(self._device_guids) > 5:
+            device_list += "..."
         _LOGGER.info(
             "MQTT client starting for %d device(s): %s",
             len(self._device_guids),
-            ", ".join(self._device_guids[:5])
-            + ("..." if len(self._device_guids) > 5 else ""),
+            device_list,
         )
 
     async def stop(self) -> None:
@@ -144,16 +159,15 @@ class SmartSolarMQTTClient:
                 if self._running:
                     _LOGGER.warning(
                         "MQTT connection failed (%s), reconnecting in %ds...",
-                        exc, MQTT_RECONNECT_DELAY,
+                        exc,
+                        MQTT_RECONNECT_DELAY,
                     )
                     await asyncio.sleep(MQTT_RECONNECT_DELAY)
 
     async def _connect_and_listen(self) -> None:
         """Connect to broker, subscribe, and process messages."""
         # ssl.create_default_context() is blocking — run in thread executor
-        tls_context = await asyncio.get_event_loop().run_in_executor(
-            None, ssl.create_default_context
-        )
+        tls_context = await asyncio.get_event_loop().run_in_executor(None, ssl.create_default_context)
 
         # Decode base64 password from API (handle non-base64 gracefully)
         mqtt_password: str | None = None
@@ -176,8 +190,11 @@ class SmartSolarMQTTClient:
         ) as client:
             self._client = client
             self._connected = True
-            _LOGGER.info("Connected to SmartSolar MQTT broker at %s:%d",
-                          MQTT_BROKER, MQTT_PORT)
+            _LOGGER.info(
+                "Connected to SmartSolar MQTT broker at %s:%d",
+                MQTT_BROKER,
+                MQTT_PORT,
+            )
 
             # Subscribe to all device topics
             for guid in self._device_guids:
@@ -190,9 +207,7 @@ class SmartSolarMQTTClient:
                 try:
                     await self._handle_message(message)
                 except Exception as exc:
-                    _LOGGER.warning(
-                        "Error processing MQTT message: %s", exc, exc_info=True
-                    )
+                    _LOGGER.warning("Error processing MQTT message: %s", exc, exc_info=True)
 
     async def _handle_message(self, message: aiomqtt.Message) -> None:
         """Parse and normalize an incoming MQTT message.
@@ -228,11 +243,17 @@ class SmartSolarMQTTClient:
             return
         device_guid = topic_parts[-1]
 
-        normalized: dict[str, Any] = {}
+        # Fields that describe the message itself rather than a measurement.
+        # They must never be turned into sensors.
+        bookkeeping_fields = frozenset(
+            {"command", "deviceGuid", "espId", "timeStamp", "firmwareVersion", "messagesCounter"}
+        )
 
-        if "dataStreams" in payload and isinstance(payload["dataStreams"], list):
+        normalized: dict[str, Any] = {}
+        data_streams = payload.get("dataStreams")
+        if isinstance(data_streams, list) and data_streams:
             # Standard format — extract from dataStreams + pick up top-level extras
-            for stream in payload["dataStreams"]:
+            for stream in data_streams:
                 if not isinstance(stream, dict):
                     continue
                 name = stream.get("name")
@@ -241,25 +262,29 @@ class SmartSolarMQTTClient:
                     normalized[name] = value
 
             # Top-level fields NOT in dataStreams (e.g., signalQuality)
-            top_level_fields = ("signalQuality",)
-            for key in top_level_fields:
-                if key in payload:
-                    mapped_key = MQTT_FIELD_MAPPING.get(key, key)
-                    normalized[mapped_key] = payload[key]
+            if "signalQuality" in payload:
+                mapped_key: str = MQTT_FIELD_MAPPING.get("signalQuality", "signalQuality")
+                normalized[mapped_key] = payload["signalQuality"]
 
             _LOGGER.debug(
                 "MQTT data for %s: %d fields (dataStreams format)",
-                device_guid, len(normalized),
+                device_guid,
+                len(normalized),
             )
         else:
-            # Flat dict format — map all keys through MQTT_FIELD_MAPPING
+            # Flat dict format — map every measurement key. An empty (or
+            # non-list) dataStreams is treated as "not present" so the other
+            # fields are not silently dropped.
             for key, value in payload.items():
-                mapped_key = MQTT_FIELD_MAPPING.get(key, key)
-                normalized[mapped_key] = value
+                if key in bookkeeping_fields or key == "dataStreams":
+                    continue
+                mapped_field: str = MQTT_FIELD_MAPPING.get(key) or key
+                normalized[mapped_field] = value
 
             _LOGGER.debug(
                 "MQTT data for %s: %d fields (flat format)",
-                device_guid, len(normalized),
+                device_guid,
+                len(normalized),
             )
 
         # Forward to coordinator

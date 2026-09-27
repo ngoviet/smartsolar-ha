@@ -1,7 +1,7 @@
 {
   "domain": "smartsolar_mppt",
   "name": "SmartSolar MPPT",
-  "version": "1.4.0",
+  "version": "1.5.1",
   "documentation": "https://github.com/ngoviet/smartsolar-ha",
   "codeowners": ["@ngoviet"],
   "requirements": ["aiohttp>=3.8.0", "aiomqtt>=2.0"],

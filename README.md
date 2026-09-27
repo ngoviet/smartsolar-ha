@@ -3,9 +3,9 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 [![GitHub release](https://img.shields.io/github/release/ngoviet/smartsolar-ha.svg)](https://github.com/ngoviet/smartsolar-ha/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![HA Version](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-41BDF5)](https://www.home-assistant.io)
-[![Tests](https://img.shields.io/badge/tests-121%20passed-brightgreen)](https://github.com/ngoviet/smartsolar-ha)
-[![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org)
+[![HA Version](https://img.shields.io/badge/Home%20Assistant-2026.9%2B-41BDF5)](https://www.home-assistant.io)
+[![Tests](https://img.shields.io/badge/tests-261%20passed-brightgreen)](https://github.com/ngoviet/smartsolar-ha)
+[![Python](https://img.shields.io/badge/python-3.14%2B-blue)](https://www.python.org)
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ngoviet&repository=smartsolar-ha&category=integration)
 
@@ -52,7 +52,10 @@ Compatible with other SmartSolar devices using the same cloud API.
 | Total Energy | kWh | Lifetime energy generated |
 | Temperature | °C | Controller temperature |
 | Status | — | Operating status (Online / Charging / Idle / Fault) |
-| WiFi Signal | % | WiFi signal quality (0–100%, MQTT only) |
+| WiFi Signal | % | WiFi signal quality (0–100%, via MQTT or REST) |
+| Peak Power Today | W | Highest power output reached today |
+| Avg Power Today | W | Average power output today |
+| Production Hours Today | h | Hours of production today (above ~5 W) |
 
 ## Installation
 
@@ -107,11 +110,49 @@ SmartSolarDataUpdateCoordinator
       +-----+------+-----+
       |     |      |     |
    Sensor  Number  diag-  MQTT
-   (×10)  (update nostic  client
+   (×13)  (update nostic  client
            interval)
 ```
 
 ## Changelog
+
+### v1.5.1 (2026-09-27) — audit release
+
+**Correctness fixes:**
+- **Project voltage/temperature no longer summed.** Both chargers share one 24 V
+  bus; the aggregate used to report ~53 V for battery voltage. Each sensor type
+  now has an explicit strategy: currents/power/energy sum, voltage/temperature/
+  WiFi average, status takes the worst case.
+- **Project status sensor always returned `unknown`** — status was mapped to text
+  before cross-device aggregation. The numeric code is aggregated first, then mapped.
+- **API retry/backoff actually runs now.** `_request_with_retry` existed but no
+  request used it, so the documented 1s/2s/4s retry never happened.
+- **Token expiry parsing can no longer break refreshes.** A naive timestamp from
+  the API used to raise `TypeError` when compared with an aware `utcnow()`.
+- **MQTT data from other customers is rejected.** The SmartSolar broker is shared
+  by every account; a foreign device GUID can no longer be injected into this
+  config entry's data.
+- **Malformed MQTT/deviceLog payloads can no longer crash a poll.**
+- **Daily statistics sensors now report numbers.** They were registered but never
+  updated on the previously deployed build.
+- **`today_kwh` builds statistics again.** `state_class: measurement` with
+  `device_class: energy` is rejected by Home Assistant, which logged a warning per
+  entity and skipped the statistics; it is now `total_increasing`.
+- **Stable PV1/PV2 labels.** Device order is sorted numerically by GUID, so
+  entity IDs and dashboards no longer shuffle between restarts.
+- **Clean unload.** The coordinator's poll timer and midnight listener are now
+  actually stopped (`async_shutdown()` is a coroutine and was not awaited).
+- **Per-device WiFi signal** reads the `signalQuality` field that REST reports
+  outside `dataStreams`, while still preferring live MQTT values.
+
+**Tooling:**
+- **261 tests** (was 121), including `tests/test_e2e.py` which drives the real
+  `async_setup_entry` / `async_unload_entry` against a real Home Assistant core.
+- **mypy is a hard CI gate** — it previously ran as `mypy … || true`, hiding 29
+  type errors.
+- `deploy_to_ha.py` — gated deploy (lint + format + types + tests → backup →
+  upload → restart → wait for the API).
+- `verify_live.py` — asserts the deployed entities are correct on a live instance.
 
 ### v1.4.0 (2026-06-22)
 
@@ -192,8 +233,8 @@ SmartSolarDataUpdateCoordinator
 
 ## Requirements
 
-- Home Assistant **2024.1** or newer
-- Python **3.12+**
+- Home Assistant **2026.9** or newer
+- Python **3.14+** (required by Home Assistant 2026.x)
 - `aiohttp >= 3.8.0`
 - `aiomqtt >= 2.0` (optional but recommended — enables real-time MQTT updates)
 - SmartSolar account (registered at [smartsolar.io.vn](https://smartsolar.io.vn))

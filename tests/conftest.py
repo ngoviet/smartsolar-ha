@@ -14,6 +14,7 @@ def _patch_frame_helper():
     with patch("homeassistant.helpers.frame.report_usage", return_value=None):
         yield
 
+
 # Sample API responses
 SAMPLE_DEVICE_RESPONSE = {
     "lastMessage": {
@@ -59,7 +60,7 @@ SAMPLE_PROJECT_RESPONSE = {
                 {"name": "temperature", "value": "35.0"},
                 {"name": "signal_quality", "value": "95"},
                 {"name": "status", "value": "1"},
-            ]
+            ],
         },
         {
             "deviceGuid": "14756976",
@@ -74,8 +75,8 @@ SAMPLE_PROJECT_RESPONSE = {
                 {"name": "temperature", "value": "35.0"},
                 {"name": "signal_quality", "value": "85"},
                 {"name": "status", "value": "1"},
-            ]
-        }
+            ],
+        },
     ],
     "_mode": "project",
     "_device_type": 2,

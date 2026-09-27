@@ -7,7 +7,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.smartsolar_mppt.const import MAX_UPDATE_INTERVAL, MIN_UPDATE_INTERVAL
+from custom_components.smartsolar_mppt.const import (
+    DEFAULT_UPDATE_INTERVAL,
+    MAX_UPDATE_INTERVAL,
+    MIN_UPDATE_INTERVAL,
+)
 from custom_components.smartsolar_mppt.number import UpdateIntervalNumber
 
 
@@ -64,18 +68,20 @@ class TestUpdateIntervalNumber:
     def test_mode_is_box(self):
         """Number mode is BOX (user types a value)."""
         from homeassistant.components.number import NumberMode
+
         entity = self._make_number()
         assert entity._attr_mode == NumberMode.BOX
 
-    def test_default_name(self):
-        """Default name before translations load."""
+    def test_default_name_key(self):
+        """Entity name comes from the HA translation key, not a hardcoded string."""
         entity = self._make_number()
-        assert entity._attr_name == "Update Frequency"
+        assert entity._attr_translation_key == "update_frequency"
+        assert entity._attr_has_entity_name is True
 
     def test_default_unit(self):
-        """Default unit before translations load."""
+        """Unit is the HA-conventional seconds symbol."""
         entity = self._make_number()
-        assert entity._attr_native_unit_of_measurement == "seconds"
+        assert entity._attr_native_unit_of_measurement == "s"
 
     def test_icon(self):
         """Icon is timer-cog."""
@@ -111,3 +117,66 @@ class TestUpdateIntervalNumber:
         entity = self._make_number()
         await entity.async_set_native_value(10.7)
         assert self.coordinator.update_interval == timedelta(seconds=10)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("value", [0.0, -1.0, 31.0, 1000.0])
+    async def test_out_of_range_value_is_rejected(self, value):
+        """Values outside 1..30 never reach the coordinator or the config entry."""
+        entity = self._make_number()
+        await entity.async_set_native_value(value)
+        assert self.coordinator.update_interval == timedelta(seconds=5)
+        self.hass.config_entries.async_update_entry.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_defaults_to_default_interval_when_none(self):
+        """native_value falls back to DEFAULT_UPDATE_INTERVAL."""
+        self.coordinator.update_interval = None
+        entity = self._make_number()
+        assert entity.native_value == DEFAULT_UPDATE_INTERVAL.total_seconds()
+
+    def test_restore_entity_in_mro(self):
+        """The number entity must be a RestoreEntity so state survives restarts."""
+        from homeassistant.helpers.restore_state import RestoreEntity
+
+        assert issubclass(UpdateIntervalNumber, RestoreEntity)
+
+    @pytest.mark.asyncio
+    async def test_restores_last_interval_on_add(self):
+        """A restored state re-applies the interval to the coordinator."""
+        self.coordinator.update_interval = timedelta(seconds=5)
+        entity = self._make_number()
+        last_state = MagicMock()
+        last_state.state = "25"
+        entity.async_get_last_state = AsyncMock(return_value=last_state)
+
+        await entity.async_added_to_hass()
+
+        assert self.coordinator.update_interval == timedelta(seconds=25)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("restored", ["unavailable", "unknown", "0", "99", "abc", ""])
+    async def test_ignores_unusable_restored_state(self, restored):
+        """Junk or out-of-range restored state leaves the interval alone."""
+        self.coordinator.update_interval = timedelta(seconds=5)
+        entity = self._make_number()
+        last_state = MagicMock()
+        last_state.state = restored
+        entity.async_get_last_state = AsyncMock(return_value=last_state)
+
+        await entity.async_added_to_hass()
+
+        assert self.coordinator.update_interval == timedelta(seconds=5)
+
+    @pytest.mark.asyncio
+    async def test_no_restored_state_is_safe(self):
+        """First-ever start has no previous state."""
+        entity = self._make_number()
+        entity.async_get_last_state = AsyncMock(return_value=None)
+
+        await entity.async_added_to_hass()
+
+        assert self.coordinator.update_interval == timedelta(seconds=5)
+
+    def test_mro_is_consistent(self):
+        """A valid MRO means the class definition is not contradictory."""
+        assert UpdateIntervalNumber.__mro__

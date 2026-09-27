@@ -1,8 +1,10 @@
 """Upload SmartSolar integration files to HA server via SSH exec."""
-import paramiko
-import os
+
 import base64
+import os
 import sys
+
+import paramiko
 
 HA_HOST = os.environ.get("HA_HOST", "192.168.10.15")
 HA_USER = os.environ.get("HA_USER", "vokupt")
@@ -29,7 +31,7 @@ def upload_file(ssh, local_path, remote_path):
 
     # Upload base64 content in chunks via sudo tee
     chunk_size = 51200
-    chunks = [content[i:i+chunk_size] for i in range(0, len(content), chunk_size)]
+    chunks = [content[i : i + chunk_size] for i in range(0, len(content), chunk_size)]
 
     for i, chunk in enumerate(chunks):
         if i == 0:

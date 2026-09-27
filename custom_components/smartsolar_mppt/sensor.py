@@ -16,13 +16,19 @@ from .const import (
     DOMAIN,
     MODE_DEVICE,
     MODE_PROJECT,
+    SENSOR_LOGGER,
     SENSOR_TYPES,
+    STATS_SENSOR_TYPES,
     STATUS_MAPPING,
+    SYNTHESIS_FIELD_MAPPING,
+    UNRELIABLE_SYNTHESIS_SENSORS,
     build_device_info,
+    get_aggregation,
 )
 from .coordinator import SmartSolarDataUpdateCoordinator
+from .helpers import coerce_float, stream_dict
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(SENSOR_LOGGER)
 
 
 async def async_setup_entry(
@@ -31,9 +37,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up SmartSolar MPPT sensor based on a config entry."""
-    coordinator: SmartSolarDataUpdateCoordinator = hass.data[DOMAIN][
-        config_entry.entry_id
-    ]
+    coordinator: SmartSolarDataUpdateCoordinator = hass.data[DOMAIN][config_entry.entry_id]
 
     mode = config_entry.data["mode"]
     chipset_ids = config_entry.data.get("chipset_ids")
@@ -42,6 +46,7 @@ async def async_setup_entry(
 
     if mode == MODE_DEVICE:
         # Device mode: create sensors for single device
+        device_guid = chipset_ids[0] if chipset_ids else "unknown"
         for sensor_type, sensor_info in SENSOR_TYPES.items():
             entities.append(
                 SmartSolarDeviceSensor(
@@ -49,7 +54,18 @@ async def async_setup_entry(
                     config_entry=config_entry,
                     sensor_type=sensor_type,
                     sensor_info=sensor_info,
-                    device_guid=chipset_ids[0] if chipset_ids else "unknown",
+                    device_guid=device_guid,
+                )
+            )
+        # Stats sensors (daily peak, avg, production hours)
+        for sensor_type, sensor_info in STATS_SENSOR_TYPES.items():
+            entities.append(
+                SmartSolarStatsSensor(
+                    coordinator=coordinator,
+                    config_entry=config_entry,
+                    sensor_type=sensor_type,
+                    sensor_info=sensor_info,
+                    device_guid=device_guid,
                 )
             )
     elif mode == MODE_PROJECT:
@@ -67,15 +83,18 @@ async def async_setup_entry(
 
         # Individual device sensors
         # Get device GUIDs from coordinator data (works for both Project ID and Device IDs mode)
-        device_guids = []
+        device_guids: list[str] = []
 
-        # Try to get device GUIDs from coordinator data first
+        # Try to get device GUIDs from coordinator data first. The order is
+        # sorted (see SmartSolarDataUpdateCoordinator.device_guids) so the
+        # PV1/PV2 labels and the resulting entity_ids do not shuffle between
+        # restarts.
         if coordinator.data and "deviceLogs" in coordinator.data:
-            device_guids = [str(log.get("deviceGuid")) for log in coordinator.data.get("deviceLogs", []) if log.get("deviceGuid")]
+            device_guids = coordinator.device_guids(coordinator.data)
 
         # Fallback to chipset_ids from config if no data available yet
         if not device_guids and chipset_ids:
-            device_guids = chipset_ids
+            device_guids = [str(cid) for cid in chipset_ids]
 
         # Create individual device sensors for each discovered device (labeled PV1, PV2, ...)
         for idx, device_guid in enumerate(device_guids):
@@ -90,17 +109,42 @@ async def async_setup_entry(
                         device_index=idx + 1,  # 1-based: PV1, PV2, ...
                     )
                 )
+            # Stats sensors for each device in project mode
+            for sensor_type, sensor_info in STATS_SENSOR_TYPES.items():
+                entities.append(
+                    SmartSolarStatsSensor(
+                        coordinator=coordinator,
+                        config_entry=config_entry,
+                        sensor_type=sensor_type,
+                        sensor_info=sensor_info,
+                        device_guid=device_guid,
+                        device_index=idx + 1,
+                    )
+                )
 
     async_add_entities(entities)
 
 
-class SmartSolarSensor(CoordinatorEntity, RestoreEntity, SensorEntity):  # type: ignore[misc]
+class SmartSolarSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
     """Base class for SmartSolar sensors."""
 
+    # Narrow the coordinator type: CoordinatorEntity only knows the generic
+    # DataUpdateCoordinator, but our subclasses call the SmartSolar-specific
+    # get_daily_stats()/device_guids() helpers.
+    coordinator: SmartSolarDataUpdateCoordinator
+
     __slots__ = (
-        "_config_entry", "_sensor_type", "_sensor_info", "_device_guid",
-        "_attr_unique_id", "_attr_name", "_attr_native_unit_of_measurement",
-        "_attr_icon", "_attr_device_class", "_attr_state_class", "_attr_device_info",
+        "_config_entry",
+        "_sensor_type",
+        "_sensor_info",
+        "_device_guid",
+        "_attr_unique_id",
+        "_attr_name",
+        "_attr_native_unit_of_measurement",
+        "_attr_icon",
+        "_attr_device_class",
+        "_attr_state_class",
+        "_attr_device_info",
     )
 
     def __init__(
@@ -125,7 +169,11 @@ class SmartSolarSensor(CoordinatorEntity, RestoreEntity, SensorEntity):  # type:
 
         _LOGGER.debug(
             "Creating sensor - Type: %s, Mode: %s, Project ID: %s, Chipset IDs: %s, Device GUID: %s",
-            sensor_type, mode, project_id, chipset_ids, device_guid
+            sensor_type,
+            mode,
+            project_id,
+            chipset_ids,
+            device_guid,
         )
 
         if mode == MODE_DEVICE:
@@ -145,8 +193,7 @@ class SmartSolarSensor(CoordinatorEntity, RestoreEntity, SensorEntity):  # type:
 
         # Debug: Log generated unique_id
         _LOGGER.debug(
-            "Generated unique_id: %s (prefix: %s, sensor_type: %s)",
-            self._attr_unique_id, prefix, sensor_type
+            "Generated unique_id: %s (prefix: %s, sensor_type: %s)", self._attr_unique_id, prefix, sensor_type
         )
 
         # Set basic attributes (name without prefix)
@@ -173,28 +220,24 @@ class SmartSolarSensor(CoordinatorEntity, RestoreEntity, SensorEntity):  # type:
         else:
             self._attr_state_class = None
 
-        self._attr_device_info = build_device_info(
-            config_entry.entry_id, mode, project_id
-        )
+        self._attr_device_info = build_device_info(config_entry.entry_id, mode, project_id)
 
-
-    def _get_value_from_data_streams(self, data_streams: list[dict[str, Any]]) -> float | str | None:
+    def _get_value_from_data_streams(self, data_streams: list[dict[str, Any]] | None) -> float | str | None:
         """Get value from data streams based on sensor type - optimized version."""
         if not data_streams:
             return None
 
-        # Use dict for O(1) lookup instead of list iteration
-        stream_dict = {s["name"]: s["value"] for s in data_streams if s.get("name") is not None and s.get("value") is not None}
+        return self._convert_stream_value(stream_dict(data_streams).get(self._sensor_type))
 
-        value = stream_dict.get(self._sensor_type)
-
+    def _convert_stream_value(self, value: Any) -> float | str | None:
+        """Convert a raw stream value into the sensor's native value."""
         if value is None:
             return None
 
         # Handle status mapping
         if self._sensor_type == "status":
             try:
-                return STATUS_MAPPING.get(int(value), f"Unknown ({value})")
+                return STATUS_MAPPING.get(int(float(value)), f"Unknown ({value})")
             except (ValueError, TypeError):
                 return f"Unknown ({value})"
 
@@ -209,11 +252,41 @@ class SmartSolarSensor(CoordinatorEntity, RestoreEntity, SensorEntity):  # type:
         if max_val is not None and num_value > max_val:
             _LOGGER.debug(
                 "Sensor %s value %.1f exceeds max %.0f — treating as invalid",
-                self._sensor_type, num_value, max_val
+                self._sensor_type,
+                num_value,
+                max_val,
             )
             return None
 
         return num_value
+
+    def _device_log_value(self, device_log: Any, *, raw_status: bool = False) -> float | str | None:
+        """Extract this sensor's value from one deviceLog entry.
+
+        Two locations are consulted, in this order:
+          1. ``dataStreams`` — live MQTT values are merged in here, so this is
+             the freshest source whenever the device publishes them.
+          2. the deviceLog's top-level ``signalQuality`` — the REST
+             ``/Metric/*`` response reports WiFi signal there, NOT inside
+             ``dataStreams``. Some firmware only ever sends the older
+             ``updateDeviceLog`` message, which carries no signalQuality at all,
+             so for those devices this REST value is the only one that exists.
+
+        ``raw_status`` returns the numeric status code untouched, which is what
+        cross-device aggregation needs (aggregating already-mapped text would
+        always fail).
+        """
+        if not isinstance(device_log, dict):
+            return None
+
+        if raw_status and self._sensor_type == "status":
+            return coerce_float(stream_dict(device_log.get("dataStreams")).get("status"))
+
+        data_streams = device_log.get("dataStreams")
+        value = self._get_value_from_data_streams(data_streams if isinstance(data_streams, list) else None)
+        if value is None and self._sensor_type == "signal_quality":
+            value = self._convert_stream_value(device_log.get("signalQuality"))
+        return value
 
 
 class SmartSolarDeviceSensor(SmartSolarSensor):
@@ -226,14 +299,9 @@ class SmartSolarDeviceSensor(SmartSolarSensor):
             _LOGGER.debug("No coordinator data available")
             return None
 
-
         # For device mode, data is in lastMessage.dataStreams
-        last_message = self.coordinator.data.get("lastMessage", {})
-        data_streams = last_message.get("dataStreams", [])
-
-        # Debug info removed for production
-
-        return self._get_value_from_data_streams(data_streams)
+        last_message = self.coordinator.data.get("lastMessage") or {}
+        return self._device_log_value(last_message)
 
 
 class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
@@ -241,90 +309,87 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
 
     @property
     def native_value(self) -> float | str | None:
-        """Return the state of the sensor."""
+        """Return the state of the sensor.
+
+        For most sensors the server's ``synthesisStreams`` value is used, and
+        individual ``deviceLogs`` are the fallback. Sensors listed in
+        ``UNRELIABLE_SYNTHESIS_SENSORS`` (charge_power, currents, WiFi signal)
+        are ALWAYS aggregated from ``deviceLogs`` because the server value is
+        frequently stale or absent.
+
+        Aggregation is per sensor type (see ``const.AGGREGATION``): currents,
+        power and energy are summed, while voltage / temperature / signal
+        quality are averaged. The devices of a project share one battery bus,
+        so summing voltages would report 53 V for a 24 V system.
+        """
         if not self.coordinator.data:
             return None
 
-        synthesis_streams = self.coordinator.data.get("synthesisStreams", [])
-        if not synthesis_streams:
-            return None
+        # ── Always aggregate locally ──
+        if self._sensor_type in UNRELIABLE_SYNTHESIS_SENSORS:
+            return self._calculate_from_device_logs()
 
-        api_field_mapping = {
-            "today_kwh": "yield_today",
-            "total_kwh": "yield_total",
-        }
-        field_name = api_field_mapping.get(self._sensor_type, self._sensor_type)
-
-        for stream in synthesis_streams:
-            if stream.get("name") == field_name:
+        # ── Prefer the server-side synthesis value ──
+        synthesis_streams = self.coordinator.data.get("synthesisStreams")
+        if synthesis_streams:
+            field_name = SYNTHESIS_FIELD_MAPPING.get(self._sensor_type, self._sensor_type)
+            for stream in synthesis_streams:
+                if not isinstance(stream, dict) or stream.get("name") != field_name:
+                    continue
+                value = stream.get("value")
+                if value is None:
+                    break
                 try:
-                    value = stream.get("value")
-                    if value is None:
-                        return None
-                    return float(value)
+                    num_value = float(value)
                 except (ValueError, TypeError):
-                    return None
+                    break
+                return self._apply_status_mapping(num_value)
 
         return self._calculate_from_device_logs()
 
+    def _apply_status_mapping(self, num_value: float) -> float | str:
+        """Map a status code to text; pass other numeric values through."""
+        if self._sensor_type == "status":
+            return STATUS_MAPPING.get(int(num_value), f"Unknown ({num_value})")
+        return num_value
+
     def _calculate_from_device_logs(self) -> float | str | None:
-        """Calculate synthesis value from individual device logs."""
-        device_logs = self.coordinator.data.get("deviceLogs", [])
+        """Aggregate the value from the individual device logs."""
+        device_logs = self.coordinator.data.get("deviceLogs") or []
         if not device_logs:
-            _LOGGER.debug("Synthesis sensor %s - No deviceLogs available for calculation", self._sensor_type)
+            _LOGGER.debug(
+                "Synthesis sensor %s - no deviceLogs available for aggregation",
+                self._sensor_type,
+            )
             return None
 
-        # For status, calculate average from deviceLogs since it's not in synthesisStreams
-        if self._sensor_type == "status":
-            total_status = 0.0
-            count = 0
-
-            for device_log in device_logs:
-                data_streams = device_log.get("dataStreams", [])
-
-                # For status calculation, we need the raw numeric value, not the mapped string
-                # Find the raw status value from data streams
-                raw_status = None
-                for stream in data_streams:
-                    if stream.get("name") == "status":
-                        try:
-                            raw_status = float(stream.get("value", 0))
-                            break
-                        except (ValueError, TypeError):
-                            raw_status = 0
-
-                if raw_status is not None:
-                    total_status += raw_status
-                    count += 1
-
-            if count == 0:
-                return None
-
-            # Return average status
-            avg_status = total_status / count
-            # Map status number to text
-            return STATUS_MAPPING.get(int(avg_status), f"Unknown ({avg_status})")
-
-        # For other sensors, calculate sum from individual devices
-        total_value = 0.0
-        count = 0
-
+        values: list[float] = []
         for device_log in device_logs:
-            data_streams = device_log.get("dataStreams", [])
-            device_value = self._get_value_from_data_streams(data_streams)
+            value = self._device_log_value(device_log, raw_status=True)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                values.append(float(value))
 
-            if device_value is not None and isinstance(device_value, (int, float)):
-                total_value += device_value
-                count += 1
-
-        if count == 0:
+        if not values:
             return None
 
-        # Return sum for most sensors, average for status
+        return self._aggregate(values)
+
+    def _aggregate(self, values: list[float]) -> float | str:
+        """Combine per-device values according to the sensor's strategy.
+
+        Only "sum", "average" and "max" are reachable; ``const.AGGREGATION``
+        maps every sensor type to one of those three.
+        """
+        strategy = get_aggregation(self._sensor_type)
+
+        if strategy == "sum":
+            return sum(values)
+
+        result = max(values) if strategy == "max" else sum(values) / len(values)
+
         if self._sensor_type == "status":
-            return total_value / count
-        else:
-            return total_value
+            return self._apply_status_mapping(result)
+        return result
 
 
 class SmartSolarProjectDeviceSensor(SmartSolarSensor):
@@ -361,15 +426,43 @@ class SmartSolarProjectDeviceSensor(SmartSolarSensor):
             return None
 
         for device_log in device_logs:
+            if not isinstance(device_log, dict):
+                continue
             if str(device_log.get("deviceGuid")) == str(self._device_guid):
-                return self._get_value_from_data_streams(
-                    device_log.get("dataStreams", [])
-                )
+                return self._device_log_value(device_log)
 
-        _LOGGER.warning(
+        _LOGGER.debug(
             "Device GUID %s not found in deviceLogs. Available GUIDs: %s",
             self._device_guid,
-            [str(log.get("deviceGuid")) for log in device_logs]
+            [str(log.get("deviceGuid")) for log in device_logs],
         )
         return None
 
+
+class SmartSolarStatsSensor(SmartSolarSensor):
+    """Sensor for daily statistics computed by the coordinator.
+
+    Reads from coordinator.get_daily_stats() which tracks peak power,
+    average power, and production hours per device. These statistics
+    are NOT stored by the SmartSolar server long-term.
+    """
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the stats value from coordinator daily tracking."""
+        if self._device_guid is None:
+            return None
+
+        stats: dict[str, float] = self.coordinator.get_daily_stats(self._device_guid)
+
+        # Map sensor_type → stat key returned by get_daily_stats()
+        stat_key_map = {
+            "peak_power_today": "peak_power",
+            "avg_power_today": "avg_power",
+            "production_hours_today": "production_hours",
+        }
+        key = stat_key_map.get(self._sensor_type)
+        if key is None:
+            return None
+
+        return stats.get(key, 0.0)

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from custom_components.smartsolar_mppt.const import SENSOR_TYPES
 from custom_components.smartsolar_mppt.sensor import (
     SmartSolarDeviceSensor,
@@ -217,26 +219,26 @@ class TestValueExtraction:
         assert sensor.native_value == 3750.0  # yield_total
 
     def test_synthesis_sensor_status_from_synthesis_streams(self, mock_coordinator, mock_config_entry):
-        """Synthesis sensor returns status as numeric float from synthesisStreams."""
+        """Synthesis status is mapped from the raw code to text."""
         sensor = SmartSolarProjectSynthesisSensor(
             coordinator=mock_coordinator,
             config_entry=mock_config_entry,
             sensor_type="status",
             sensor_info=SENSOR_TYPES["status"],
         )
-        value = sensor.native_value
-        # Status is in synthesisStreams as "1.0" → returned as raw float (current behavior)
-        assert value == 1.0
+        # synthesisStreams carries "1.0" → "Charging"
+        assert sensor.native_value == "Charging"
 
     def test_synthesis_sensor_falls_back_to_device_logs(self, mock_coordinator, mock_config_entry):
-        """When synthesisStreams doesn't have a field, falls back to deviceLogs."""
+        """When synthesisStreams lacks a field, voltage is AVERAGED, not summed.
+
+        Both chargers sit on the same 24 V battery bus, so the project battery
+        voltage is ~24 V — summing would report a nonsense 48 V.
+        """
         # Modify coordinator data to remove 'bat_voltage' from synthesisStreams
         mock_coordinator.data = {
             **SAMPLE_PROJECT_RESPONSE,
-            "synthesisStreams": [
-                s for s in SAMPLE_PROJECT_RESPONSE["synthesisStreams"]
-                if s["name"] != "bat_voltage"
-            ],
+            "synthesisStreams": [s for s in SAMPLE_PROJECT_RESPONSE["synthesisStreams"] if s["name"] != "bat_voltage"],
         }
         sensor = SmartSolarProjectSynthesisSensor(
             coordinator=mock_coordinator,
@@ -244,9 +246,19 @@ class TestValueExtraction:
             sensor_type="bat_voltage",
             sensor_info=SENSOR_TYPES["bat_voltage"],
         )
-        value = sensor.native_value
-        # bat_voltage from deviceLogs: 24.1 + 24.1 = 48.2 (sum)
-        assert value == 48.2
+        # bat_voltage from deviceLogs: (24.1 + 24.1) / 2 = 24.1
+        assert sensor.native_value == 24.1
+
+    def test_synthesis_sensor_sums_current_from_device_logs(self, mock_coordinator, mock_config_entry):
+        """Currents ARE summed across devices (they are additive)."""
+        sensor = SmartSolarProjectSynthesisSensor(
+            coordinator=mock_coordinator,
+            config_entry=mock_config_entry,
+            sensor_type="pv_current",
+            sensor_info=SENSOR_TYPES["pv_current"],
+        )
+        # pv_current is always aggregated locally: 5.2 + 10.4
+        assert sensor.native_value == pytest.approx(15.6)
 
     def test_project_device_sensor_matches_by_guid(self, mock_coordinator, mock_config_entry):
         """ProjectDeviceSensor matches correct deviceLog by deviceGuid."""
@@ -285,6 +297,149 @@ class TestValueExtraction:
         assert sensor.native_value is None
 
 
+class TestSynthesisAggregation:
+    """Per-sensor-type aggregation across the devices of a project."""
+
+    def _sensor(self, coordinator, entry, sensor_type):
+        return SmartSolarProjectSynthesisSensor(
+            coordinator=coordinator,
+            config_entry=entry,
+            sensor_type=sensor_type,
+            sensor_info=SENSOR_TYPES[sensor_type],
+        )
+
+    def _data_without_synthesis(self):
+        """Project data with NO synthesisStreams — forces local aggregation."""
+        return {
+            "deviceLogs": [
+                {
+                    "deviceGuid": "547611",
+                    "dataStreams": [
+                        {"name": "pv_voltage", "value": "26.6"},
+                        {"name": "bat_voltage", "value": "26.6"},
+                        {"name": "pv_current", "value": "5.0"},
+                        {"name": "charge_power", "value": "200.0"},
+                        {"name": "temperature", "value": "30.0"},
+                        {"name": "status", "value": "1"},
+                    ],
+                    "signalQuality": 60,
+                },
+                {
+                    "deviceGuid": "14756976",
+                    "dataStreams": [
+                        {"name": "pv_voltage", "value": "26.4"},
+                        {"name": "bat_voltage", "value": "26.4"},
+                        {"name": "pv_current", "value": "3.0"},
+                        {"name": "charge_power", "value": "100.0"},
+                        {"name": "temperature", "value": "40.0"},
+                        {"name": "status", "value": "2"},
+                    ],
+                    "signalQuality": 80,
+                },
+            ],
+        }
+
+    @pytest.mark.parametrize(
+        ("sensor_type", "expected"),
+        [
+            # Additive — summed
+            ("pv_current", 8.0),
+            ("charge_power", 300.0),
+            # Shared bus — averaged, never summed
+            ("bat_voltage", 26.5),
+            ("pv_voltage", 26.5),
+            ("temperature", 35.0),
+            ("signal_quality", 70.0),
+        ],
+    )
+    def test_aggregation_strategy_per_sensor(self, mock_coordinator, mock_config_entry, sensor_type, expected):
+        mock_coordinator.data = self._data_without_synthesis()
+        sensor = self._sensor(mock_coordinator, mock_config_entry, sensor_type)
+        assert sensor.native_value == pytest.approx(expected)
+
+    def test_status_takes_worst_case_and_maps_to_text(self, mock_coordinator, mock_config_entry):
+        """Status is a worst-case (max) over devices, then mapped to text."""
+        mock_coordinator.data = self._data_without_synthesis()
+        sensor = self._sensor(mock_coordinator, mock_config_entry, "status")
+        # max(1, 2) = 2 → "Idle (No Sun)"
+        assert sensor.native_value == "Idle (No Sun)"
+
+    def test_battery_voltage_not_doubled(self, mock_coordinator, mock_config_entry):
+        """Regression: two 26.5 V chargers must NOT report 53 V."""
+        mock_coordinator.data = self._data_without_synthesis()
+        sensor = self._sensor(mock_coordinator, mock_config_entry, "bat_voltage")
+        assert sensor.native_value < 30
+
+    def test_signal_quality_read_from_device_log_top_level(self, mock_coordinator, mock_config_entry):
+        """REST exposes WiFi signal as a deviceLog field, not in dataStreams."""
+        mock_coordinator.data = self._data_without_synthesis()
+        sensor = self._sensor(mock_coordinator, mock_config_entry, "signal_quality")
+        assert sensor.native_value == 70.0
+
+    def test_signal_quality_prefers_data_streams_over_device_log_field(self, mock_coordinator, mock_config_entry):
+        """Live MQTT values are merged into dataStreams and are the freshest."""
+        data = self._data_without_synthesis()
+        data["deviceLogs"][0]["dataStreams"].append({"name": "signal_quality", "value": "91"})
+        mock_coordinator.data = data
+        sensor = self._sensor(mock_coordinator, mock_config_entry, "signal_quality")
+        # device 1 = 91 (dataStreams), device 2 = 80 (deviceLog field) → 85.5
+        assert sensor.native_value == pytest.approx(85.5)
+
+    def test_synthesis_value_is_preferred_when_available(self, mock_coordinator, mock_config_entry):
+        """Server synthesisStreams wins for non-unreliable sensors."""
+        mock_coordinator.data = {
+            **self._data_without_synthesis(),
+            "synthesisStreams": [{"name": "bat_voltage", "value": 26.52}],
+        }
+        sensor = self._sensor(mock_coordinator, mock_config_entry, "bat_voltage")
+        assert sensor.native_value == 26.52
+
+    def test_unreliable_sensor_ignores_server_value(self, mock_coordinator, mock_config_entry):
+        """charge_power always comes from deviceLogs, even if the server sends one."""
+        mock_coordinator.data = {
+            **self._data_without_synthesis(),
+            "synthesisStreams": [{"name": "charge_power", "value": 999999}],
+        }
+        sensor = self._sensor(mock_coordinator, mock_config_entry, "charge_power")
+        assert sensor.native_value == 300.0
+
+    def test_no_device_logs_returns_none(self, mock_coordinator, mock_config_entry):
+        mock_coordinator.data = {"deviceLogs": [], "synthesisStreams": []}
+        sensor = self._sensor(mock_coordinator, mock_config_entry, "charge_power")
+        assert sensor.native_value is None
+
+    def test_device_without_field_is_skipped_in_average(self, mock_coordinator, mock_config_entry):
+        """Devices lacking the metric do not drag the average toward zero."""
+        mock_coordinator.data = {
+            "deviceLogs": [
+                {"deviceGuid": "1", "dataStreams": [{"name": "temperature", "value": "30"}]},
+                {"deviceGuid": "2", "dataStreams": []},
+                {"deviceGuid": "3", "dataStreams": [{"name": "temperature", "value": "40"}]},
+            ]
+        }
+        sensor = self._sensor(mock_coordinator, mock_config_entry, "temperature")
+        assert sensor.native_value == pytest.approx(35.0)
+
+
+class TestDeviceModeSignalQuality:
+    """Device mode WiFi signal may arrive as a top-level lastMessage field."""
+
+    def test_device_sensor_reads_top_level_signal_quality(self, mock_coordinator, mock_config_entry):
+        mock_coordinator.data = {
+            "lastMessage": {
+                "dataStreams": [{"name": "pv_voltage", "value": "5.0"}],
+                "signalQuality": 88,
+            }
+        }
+        sensor = SmartSolarDeviceSensor(
+            coordinator=mock_coordinator,
+            config_entry=mock_config_entry,
+            sensor_type="signal_quality",
+            sensor_info=SENSOR_TYPES["signal_quality"],
+        )
+        assert sensor.native_value == 88.0
+
+
 class TestSignalQualitySensor:
     """Tests for WiFi signal quality sensor."""
 
@@ -307,6 +462,7 @@ class TestSignalQualitySensor:
             }
         }
         from tests.conftest import SAMPLE_DEVICE_RESPONSE
+
         sensor = SmartSolarDeviceSensor(
             coordinator=mock_coordinator,
             config_entry=mock_config_entry,
@@ -394,7 +550,7 @@ class TestMQTTDataMerging:
                 "dataStreams": [
                     {"name": "pv_voltage", "value": "48.5"},
                 ]
-            }
+            },
         }
         mqtt_data = {"pv_voltage": 50.1, "signal_quality": 100}
         mock_coordinator._merge_mqtt_into_data(api_data, "547611", mqtt_data)
@@ -406,6 +562,7 @@ class TestMQTTDataMerging:
     def test_merge_mqtt_into_project_mode(self, mock_coordinator, mock_config_entry):
         """_merge_mqtt_into_data updates deviceLogs for project mode."""
         from tests.conftest import SAMPLE_PROJECT_RESPONSE
+
         api_data = SAMPLE_PROJECT_RESPONSE.copy()
         mqtt_data = {"pv_voltage": 52.0, "signal_quality": 100}
         mock_coordinator._merge_mqtt_into_data(api_data, "547611", mqtt_data)

@@ -54,3 +54,16 @@ CHANGELOG.md
 # Wiki files (local only, not uploaded to GitHub)
 wiki/
 CLAUDE.md
+
+# Virtual environment used for the local test gate
+.venv/
+venv/
+
+# Test / coverage artifacts
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+
+# Deploy backups written by deploy_to_ha.py (same rule as the parent repo)
+_local_archive/

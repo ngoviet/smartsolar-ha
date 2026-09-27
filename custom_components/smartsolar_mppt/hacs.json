@@ -3,7 +3,6 @@
   "content_in_root": false,
   "filename": "smartsolar_mppt",
   "country": ["VN"],
-  "homeassistant": "2023.1.0",
-  "render_readme": true,
-  "iot_class": "Cloud Polling"
+  "homeassistant": "2026.9.0",
+  "render_readme": true
 }
