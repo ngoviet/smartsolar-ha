@@ -67,3 +67,19 @@ htmlcov/
 
 # Deploy backups written by deploy_to_ha.py (same rule as the parent repo)
 _local_archive/
+
+# Local secrets — HA_PASS / HA_TOKEN live here (deploy_to_ha.py, verify_live.py).
+# This rule used to come from the parent HA-Config repository; standalone it
+# must live here, or `git add -A` would stage the credentials.
+.env
+
+# Local AI/tooling state
+.claude/
+.lavish/
+.codegraph/
+.code-atlas/
+.repowise/
+.repowise-workspace/
+.playwright-mcp/
+.mcp.json
+AGENTS.md
