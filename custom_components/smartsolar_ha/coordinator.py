@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later, async_track_time_change
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .api import SmartSolarAPI, SmartSolarAPIError
 from .const import (
@@ -20,7 +21,7 @@ from .const import (
     MODE_DEVICE,
     MQTT_NOTIFY_THROTTLE,
 )
-from .helpers import coerce_float, guid_sort_key, stream_dict
+from .helpers import coerce_float, device_logs, guid_sort_key, stream_dict
 
 _LOGGER = logging.getLogger(COORDINATOR_LOGGER)
 
@@ -138,6 +139,9 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _update_daily_stats(self, device_guid: str, charge_power: float | None, now: datetime | None = None) -> None:
         """Update daily tracking with latest charge_power reading."""
+        # Normalizes NaN/Infinity (which survive ``<``/``>`` comparisons and
+        # would silently become the peak) to None as well.
+        charge_power = coerce_float(charge_power)
         if charge_power is None:
             return
 
@@ -165,7 +169,7 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # Production hours: track each minute where power > 5W
         if charge_power > 5:
             if now is None:
-                now = datetime.now()
+                now = dt_util.now()
             minute_key = f"{now.hour}:{now.minute:02d}"
             stats["active_minutes"].add(minute_key)
 
@@ -235,11 +239,7 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         reference) are derived from that order. Sorting by the numeric value of
         the GUID keeps the labels stable across restarts and re-polls.
         """
-        guids = {
-            str(log["deviceGuid"])
-            for log in data.get("deviceLogs", []) or []
-            if isinstance(log, dict) and log.get("deviceGuid")
-        }
+        guids = {str(log["deviceGuid"]) for log in device_logs(data) if isinstance(log, dict) and log.get("deviceGuid")}
         return sorted(guids, key=guid_sort_key)
 
     @callback
@@ -261,8 +261,14 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._mqtt_notify_unsub = None
 
     def _mqtt_to_data_stream(self, data: dict[str, Any]) -> list[dict[str, Any]]:
-        """Convert flat MQTT data dict to dataStreams list format."""
-        return [{"name": key, "value": str(value)} for key, value in data.items()]
+        """Convert flat MQTT data dict to dataStreams list format.
+
+        ``None`` values are dropped: some firmware publishes
+        ``signalQuality: null``, and ``str(None)`` would inject the literal
+        string ``"None"`` into ``dataStreams``, where it shadows the real REST
+        value with an unparseable one.
+        """
+        return [{"name": key, "value": str(value)} for key, value in data.items() if value is not None]
 
     def _merge_mqtt_into_data(
         self,
@@ -376,7 +382,7 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "API response: mode=%s, keys=%s, device_count=%s",
                 data.get("_mode"),
                 list(data.keys()),
-                len(data.get("deviceLogs", [])),
+                len(device_logs(data)),
             )
 
             # Track discovered devices for project mode
@@ -399,7 +405,7 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._merge_mqtt_into_data(data, guid, mqtt_data)
 
             # Update daily stats from API data (both device and project modes)
-            now = datetime.now()
+            now = dt_util.now()
             if mode == MODE_DEVICE:
                 # Device mode: extract charge_power from lastMessage.dataStreams
                 last_msg = data.get("lastMessage", {})
@@ -411,7 +417,7 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     self._update_daily_stats(device_guid, charge_power, now)
             else:
                 # Project mode: extract charge_power from each deviceLog
-                for device_log in data.get("deviceLogs", []) or []:
+                for device_log in device_logs(data):
                     if not isinstance(device_log, dict):
                         continue
                     guid = str(device_log.get("deviceGuid", ""))

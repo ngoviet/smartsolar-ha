@@ -136,6 +136,9 @@ class SmartSolarMQTTClient:
     async def stop(self) -> None:
         """Stop MQTT client gracefully."""
         self._running = False
+        # Clear the flag here as well as on the way out of the loop: diagnostics
+        # and the coordinator read `connected` immediately after stop().
+        self._connected = False
         if self._task and not self._task.done():
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -163,6 +166,10 @@ class SmartSolarMQTTClient:
                         MQTT_RECONNECT_DELAY,
                     )
                     await asyncio.sleep(MQTT_RECONNECT_DELAY)
+        # Reached on cancel or a clean end of the stream; the broker connection
+        # is gone either way, so never keep reporting it as connected.
+        self._connected = False
+        self._client = None
 
     async def _connect_and_listen(self) -> None:
         """Connect to broker, subscribe, and process messages."""
@@ -174,7 +181,7 @@ class SmartSolarMQTTClient:
         if self._password:
             try:
                 mqtt_password = base64.b64decode(self._password).decode("utf-8")
-            except (ValueError, UnicodeDecodeError):
+            except ValueError, UnicodeDecodeError:
                 _LOGGER.warning("MQTT password is not valid base64, using as-is")
                 mqtt_password = self._password
 
@@ -223,7 +230,7 @@ class SmartSolarMQTTClient:
         """
         try:
             payload = json.loads(message.payload.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except json.JSONDecodeError, UnicodeDecodeError:
             _LOGGER.debug(
                 "Invalid JSON on topic %s: %s",
                 message.topic,

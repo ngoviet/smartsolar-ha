@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import aiohttp
 import pytest
 
-from custom_components.smartsolar_mppt.api import (
+from custom_components.smartsolar_ha.api import (
     SmartSolarAPI,
     SmartSolarAPIError,
     SmartSolarAuthenticationError,
@@ -18,7 +18,7 @@ from custom_components.smartsolar_mppt.api import (
     SmartSolarNotFoundError,
     _parse_expiration,
 )
-from custom_components.smartsolar_mppt.const import RETRY_MAX_ATTEMPTS
+from custom_components.smartsolar_ha.const import RETRY_MAX_ATTEMPTS
 
 
 class _FakeResponse:
@@ -275,7 +275,7 @@ class TestRequestRetry:
         api = SmartSolarAPI("user", "pass", MagicMock())
         api._get_session = AsyncMock(return_value=session)
 
-        with patch("custom_components.smartsolar_mppt.api.asyncio.sleep", new=AsyncMock()) as sleep:
+        with patch("custom_components.smartsolar_ha.api.asyncio.sleep", new=AsyncMock()) as sleep:
             response = await api._request_with_retry("GET", "https://example.invalid/x")
 
         assert response.status == 200
@@ -291,7 +291,7 @@ class TestRequestRetry:
         api._get_session = AsyncMock(return_value=session)
 
         with (
-            patch("custom_components.smartsolar_mppt.api.asyncio.sleep", new=AsyncMock()),
+            patch("custom_components.smartsolar_ha.api.asyncio.sleep", new=AsyncMock()),
             pytest.raises(SmartSolarAPIError) as err,
         ):
             await api._request_with_retry("GET", "https://example.invalid/x")
@@ -306,7 +306,7 @@ class TestRequestRetry:
         api = SmartSolarAPI("user", "pass", MagicMock())
         api._get_session = AsyncMock(return_value=session)
 
-        with patch("custom_components.smartsolar_mppt.api.asyncio.sleep", new=AsyncMock()):
+        with patch("custom_components.smartsolar_ha.api.asyncio.sleep", new=AsyncMock()):
             response = await api._request_with_retry("GET", "https://example.invalid/x")
 
         assert response.status == 200
@@ -367,3 +367,165 @@ class TestRequestRetry:
 
         data = await api.get_metrics(device_type=2, chipset_ids=["547611"], mode="project")
         assert data["deviceLogs"][0]["deviceGuid"] == "547611"
+
+
+class _RawBodySession:
+    """Session whose responses carry a literal (possibly non-JSON) body."""
+
+    def __init__(self, status: int, body: bytes) -> None:
+        self.status = status
+        self._body = body
+        self.requests = 0
+
+    def _response(self) -> Any:
+        session = self
+        session.requests += 1
+
+        class _Resp:
+            def __init__(self) -> None:
+                self.status = session.status
+
+            async def read(self) -> bytes:
+                return session._body
+
+            async def text(self) -> str:
+                return session._body.decode(errors="replace")
+
+            async def json(self) -> Any:
+                return json.loads(session._body.decode())
+
+            async def __aenter__(self) -> Any:
+                return self
+
+            async def __aexit__(self, *exc: Any) -> bool:
+                return False
+
+        return _Resp()
+
+    def post(self, *_args: Any, **_kwargs: Any) -> Any:
+        return self._response()
+
+    def request(self, *_args: Any, **_kwargs: Any) -> Any:
+        return self._response()
+
+
+class TestNonObjectResponses:
+    """A payload that is not a JSON object must be an API error.
+
+    ``ClientResponse.json()`` is typed ``Any``; a bare list used to escape as
+    ``AttributeError: 'list' object has no attribute 'get'`` from inside a
+    caller, and no handler classified it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_login_with_list_body_raises_api_error(self):
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=_RawBodySession(200, b'["a", "b"]'))
+
+        with pytest.raises(SmartSolarAPIError, match="expected a JSON object"):
+            await api.login()
+
+    @pytest.mark.asyncio
+    async def test_login_with_invalid_json_raises_api_error(self):
+        """A JSON content type with an HTML body used to raise JSONDecodeError."""
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=_RawBodySession(200, b"<html>bad gateway</html>"))
+
+        with pytest.raises(SmartSolarAPIError, match="not valid JSON"):
+            await api.login()
+
+    @pytest.mark.asyncio
+    async def test_get_metrics_with_list_body_raises_api_error(self):
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=_RawBodySession(200, b"[1, 2, 3]"))
+        api._token = "t"
+        api._token_expiry = datetime.now(UTC) + timedelta(days=30)
+
+        with pytest.raises(SmartSolarAPIError, match="expected a JSON object"):
+            await api.get_metrics(device_type=2, chipset_ids=["547611"], mode="project")
+
+    @pytest.mark.asyncio
+    async def test_get_project_metrics_with_invalid_json_raises_api_error(self):
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=_RawBodySession(200, b"not json at all"))
+        api._token = "t"
+        api._token_expiry = datetime.now(UTC) + timedelta(days=30)
+
+        with pytest.raises(SmartSolarAPIError, match="not valid JSON"):
+            await api.get_project_metrics("1072")
+
+
+class TestTokenInvalidationOn401:
+    """A token the server rejects must be dropped, not cached forever.
+
+    Tokens live ~30 days, so ``refresh_token_if_needed()`` would keep the stale
+    token and every later poll failed with 401 until Home Assistant restarted.
+    """
+
+    @pytest.mark.asyncio
+    async def test_401_clears_the_cached_token(self):
+        session = _FakeSession([(401, {"error": "revoked"})])
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=session)
+        api._token = "stale-token"
+        api._token_expiry = datetime.now(UTC) + timedelta(days=30)
+
+        with pytest.raises(SmartSolarAuthenticationError):
+            await api.get_project_metrics("1072")
+
+        assert api.token is None
+        assert api.token_expiry is None
+
+    @pytest.mark.asyncio
+    async def test_next_call_authenticates_again(self):
+        """The dropped token makes the following call log in and succeed."""
+        session = _FakeSession(
+            [
+                (401, {"error": "revoked"}),
+                (200, {"token": "fresh-token", "expiration": "2027-01-01T00:00:00Z"}),
+                (200, {"synthesisStreams": [], "deviceLogs": []}),
+            ]
+        )
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=session)
+        api._token = "stale-token"
+        api._token_expiry = datetime.now(UTC) + timedelta(days=30)
+
+        with pytest.raises(SmartSolarAuthenticationError):
+            await api.get_project_metrics("1072")
+
+        data = await api.get_project_metrics("1072")
+
+        assert api.token == "fresh-token"
+        assert data == {"synthesisStreams": [], "deviceLogs": []}
+        assert session.requests == 3  # 401, login POST, retried GET
+
+
+class TestRetryableStatuses:
+    """408/429 mean "come back later", so they are retried like a 5xx."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status", [408, 429])
+    async def test_rate_limit_and_timeout_are_retried(self, status):
+        session = _FakeSession([(status, {"error": "slow down"}), (200, {"ok": True})])
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=session)
+
+        with patch("custom_components.smartsolar_ha.api.asyncio.sleep", new=AsyncMock()) as sleep:
+            response = await api._request_with_retry("GET", "https://example.invalid/x")
+
+        assert response.status == 200
+        assert session.requests == 2
+        assert sleep.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_client_error_is_not_retried(self):
+        """400 is a permanent failure — retrying it just adds latency."""
+        session = _FakeSession([(400, {"error": "bad request"})])
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=session)
+
+        response = await api._request_with_retry("GET", "https://example.invalid/x")
+
+        assert response.status == 400
+        assert session.requests == 1

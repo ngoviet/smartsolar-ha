@@ -8,18 +8,18 @@ from typing import Any
 
 from homeassistant.helpers.device_registry import DeviceInfo
 
-DOMAIN = "smartsolar_mppt"
+DOMAIN = "smartsolar_ha"
 
 _LOGGER = logging.getLogger(__name__)
 
 # Integration release version — keep in sync with manifest.json / pyproject.toml
-VERSION = "1.5.1"
+VERSION = "2.0.0"
 
 # Child loggers so users can silence just the noisy parts:
 #   logger:
 #     logs:
-#       custom_components.smartsolar_mppt.coordinator: warning
-#       custom_components.smartsolar_mppt.sensor: warning
+#       custom_components.smartsolar_ha.coordinator: warning
+#       custom_components.smartsolar_ha.sensor: warning
 COORDINATOR_LOGGER = f"{DOMAIN}.coordinator"
 SENSOR_LOGGER = f"{DOMAIN}.sensor"
 

@@ -3,7 +3,7 @@ Write-Host "=== SmartSolar Entity Cleanup Script ===" -ForegroundColor Green
 
 # 1. Xóa __pycache__ để force reload code
 Write-Host "1. Xóa Python cache..." -ForegroundColor Yellow
-$cachePath = "\\192.168.10.15\config\custom_components\smartsolar_mppt\__pycache__"
+$cachePath = "\\192.168.10.15\config\custom_components\smartsolar_ha\__pycache__"
 if (Test-Path $cachePath) {
     Remove-Item $cachePath -Recurse -Force
     Write-Host "   ✓ Đã xóa __pycache__" -ForegroundColor Green
@@ -26,8 +26,8 @@ if (Test-Path $registryPath) {
     $originalCount = $registry.data.entities.Count
     Write-Host "   - Tổng entities: $originalCount" -ForegroundColor Cyan
     
-    # Xóa tất cả entities có domain smartsolar_mppt
-    $registry.data.entities = $registry.data.entities | Where-Object { $_.platform -ne "smartsolar_mppt" }
+    # Xóa tất cả entities có domain smartsolar_ha
+    $registry.data.entities = $registry.data.entities | Where-Object { $_.platform -ne "smartsolar_ha" }
     $newCount = $registry.data.entities.Count
     $removedCount = $originalCount - $newCount
     
@@ -56,9 +56,9 @@ if (Test-Path $deviceRegistryPath) {
     $originalDeviceCount = $deviceRegistry.data.devices.Count
     Write-Host "   - Tổng devices: $originalDeviceCount" -ForegroundColor Cyan
     
-    # Xóa tất cả devices có identifiers chứa smartsolar_mppt
+    # Xóa tất cả devices có identifiers chứa smartsolar_ha
     $deviceRegistry.data.devices = $deviceRegistry.data.devices | Where-Object { 
-        $_.identifiers -notmatch "smartsolar_mppt" 
+        $_.identifiers -notmatch "smartsolar_ha" 
     }
     $newDeviceCount = $deviceRegistry.data.devices.Count
     $removedDeviceCount = $originalDeviceCount - $newDeviceCount

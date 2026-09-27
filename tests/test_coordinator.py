@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock
 import pytest
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.smartsolar_mppt.api import SmartSolarAPIError
-from custom_components.smartsolar_mppt.coordinator import SmartSolarDataUpdateCoordinator
+from custom_components.smartsolar_ha.api import SmartSolarAPIError
+from custom_components.smartsolar_ha.coordinator import SmartSolarDataUpdateCoordinator
 from tests.conftest import SAMPLE_DEVICE_RESPONSE, SAMPLE_PROJECT_RESPONSE
 
 
@@ -72,7 +72,14 @@ class TestAsyncUpdateData:
             chipset_ids=["547611"],
             mode="device",
         )
-        assert result == SAMPLE_DEVICE_RESPONSE
+        # Compare content, not object identity: the coordinator annotates the
+        # payload with _mode/_device_type/_chipset_ids in place, and it must do
+        # that to its own copy rather than to the recorded sample payload.
+        assert result["lastMessage"] == SAMPLE_DEVICE_RESPONSE["lastMessage"]
+        assert result["_mode"] == "device"
+        assert result["_device_type"] == 2
+        assert result["_chipset_ids"] == ["547611"]
+        assert "_mode" not in SAMPLE_DEVICE_RESPONSE
 
     @pytest.mark.asyncio
     async def test_project_mode_fetches_project_metrics(self, mock_hass, mock_api, mock_config_entry):
@@ -85,7 +92,10 @@ class TestAsyncUpdateData:
         )
         result = await coordinator._async_update_data()
         mock_api.get_project_metrics.assert_called_once_with("1072")
-        assert result == SAMPLE_PROJECT_RESPONSE
+        assert result["synthesisStreams"] == SAMPLE_PROJECT_RESPONSE["synthesisStreams"]
+        assert result["deviceLogs"] == SAMPLE_PROJECT_RESPONSE["deviceLogs"]
+        assert result["_mode"] == "project"
+        assert result["_device_type"] == 2
 
     @pytest.mark.asyncio
     async def test_missing_device_type_raises_update_failed(self, mock_hass, mock_api, mock_config_entry):
@@ -399,3 +409,110 @@ class TestDailyStats:
         coordinator._update_daily_stats("547611", 250.0)
         coordinator._reset_daily_stats(datetime(2026, 9, 28))
         assert coordinator.get_daily_stats("547611")["peak_power"] == 0.0
+
+    @pytest.mark.parametrize("bad_value", [float("nan"), float("inf"), float("-inf")])
+    def test_non_finite_readings_are_ignored(self, mock_hass, mock_api, mock_config_entry, bad_value):
+        """NaN/Infinity survive < and > comparisons, so they need rejecting.
+
+        They come in through json.loads (which accepts the bare NaN/Infinity
+        literals) and, as a peak, they would poison the daily statistics.
+        """
+        coordinator = SmartSolarDataUpdateCoordinator(
+            hass=mock_hass,
+            api=mock_api,
+            entry=mock_config_entry,
+        )
+        coordinator._update_daily_stats("547611", bad_value)
+
+        stats = coordinator.get_daily_stats("547611")
+        assert stats["peak_power"] == 0.0
+        assert stats["avg_power"] == 0.0
+        assert stats["production_hours"] == 0.0
+
+
+class TestMalformedDeviceLogs:
+    """The API has returned null/non-list deviceLogs; a poll must survive it.
+
+    A bare ``len(data.get("deviceLogs", []))`` in a debug statement failed the
+    entire update with ``UpdateFailed: object of type 'NoneType' has no len()``
+    — and the debug arguments were evaluated even when debug logging was off.
+    """
+
+    @pytest.mark.parametrize(
+        "device_logs_value",
+        [None, 7, "oops", {"547611": {}}],
+    )
+    @pytest.mark.asyncio
+    async def test_poll_survives_malformed_device_logs(self, mock_hass, mock_api, mock_config_entry, device_logs_value):
+        mock_api.get_project_metrics = AsyncMock(return_value={"synthesisStreams": [], "deviceLogs": device_logs_value})
+        mock_config_entry.data = {"device_type": 2, "mode": "project", "project_id": "1072"}
+        coordinator = SmartSolarDataUpdateCoordinator(
+            hass=mock_hass,
+            api=mock_api,
+            entry=mock_config_entry,
+        )
+
+        data = await coordinator._async_update_data()  # must not raise UpdateFailed
+
+        assert data["deviceLogs"] == device_logs_value
+        assert coordinator.device_guids(data) == []
+
+    @pytest.mark.asyncio
+    async def test_missing_device_logs_key_is_fine(self, mock_hass, mock_api, mock_config_entry):
+        mock_api.get_project_metrics = AsyncMock(return_value={"synthesisStreams": []})
+        mock_config_entry.data = {"device_type": 2, "mode": "project", "project_id": "1072"}
+        coordinator = SmartSolarDataUpdateCoordinator(
+            hass=mock_hass,
+            api=mock_api,
+            entry=mock_config_entry,
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert coordinator.device_guids(data) == []
+
+    @pytest.mark.parametrize("payload", [{"deviceLogs": None}, {"deviceLogs": 3}, {}, None])
+    def test_device_guids_never_raises(self, payload):
+        assert SmartSolarDataUpdateCoordinator.device_guids(payload) == []
+
+
+class TestMqttStreamConversion:
+    """MQTT payload values are converted to dataStreams entries."""
+
+    def test_none_values_are_dropped(self, mock_coordinator):
+        """Some firmware publishes signalQuality: null.
+
+        ``str(None)`` used to inject the literal string "None" into
+        dataStreams, where it shadowed the real REST value.
+        """
+        streams = mock_coordinator._mqtt_to_data_stream({"charge_power": 250.0, "signal_quality": None})
+        assert streams == [{"name": "charge_power", "value": "250.0"}]
+
+    def test_values_are_stringified(self, mock_coordinator):
+        streams = mock_coordinator._mqtt_to_data_stream({"charge_power": 250.0, "signal_quality": 0})
+        assert {"name": "signal_quality", "value": "0"} in streams
+
+
+class TestFixtureIsolation:
+    """The shared sample payloads must not leak between tests.
+
+    The fixtures used to hand out a shallow ``dict.copy()``, so a test that
+    merged MQTT data in place (or reordered deviceLogs) silently rewrote the
+    module-level constant for every later test in the session.
+    """
+
+    def test_coordinator_data_is_a_deep_copy(self, mock_coordinator):
+        mock_coordinator.data["deviceLogs"][0]["dataStreams"].append({"name": "injected", "value": "1"})
+
+        assert "injected" not in str(SAMPLE_PROJECT_RESPONSE["deviceLogs"][0]["dataStreams"])
+        assert mock_coordinator.data is not SAMPLE_PROJECT_RESPONSE
+
+    def test_sample_device_fixture_is_a_deep_copy(self, sample_device_response):
+        sample_device_response["lastMessage"]["dataStreams"][0]["value"] = "999.9"
+
+        assert SAMPLE_DEVICE_RESPONSE["lastMessage"]["dataStreams"][0]["value"] == "48.5"
+
+    def test_sample_project_fixture_is_a_deep_copy(self, sample_project_response):
+        sample_project_response["deviceLogs"][0]["deviceGuid"] = "mutated"
+
+        assert SAMPLE_PROJECT_RESPONSE["deviceLogs"][0]["deviceGuid"] == "547611"

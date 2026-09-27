@@ -1,6 +1,15 @@
 # SmartSolar MPPT MQ — Toàn Bộ Kiến Thức API & Tích Hợp
 
-> **Trạng thái**: ✅ LIVE · **Phiên bản**: **v1.5.1** (2026-09-27) · **Nguồn sự thật**: [../STATUS.md](../STATUS.md) · **Cập nhật**: 2026-09-27
+> **Trạng thái**: ✅ LIVE · **Phiên bản**: **v2.0.0** (2026-09-27) · **Nguồn sự thật**: [../STATUS.md](../STATUS.md) · **Cập nhật**: 2026-09-27
+>
+> ⚠️ **v2.0.0 đổi domain `smartsolar_mppt` → `smartsolar_ha`** (thư mục, `manifest.domain`,
+> import, tên service, đường dẫn deploy). HA xác định integration theo **tên thư mục** phải
+> trùng `domain`, và domain chỉ được gồm chữ thường + gạch dưới — nên `smartsolar-ha`
+> (gạch ngang) không hợp lệ. Đây là **breaking change**: phải xoá config entry cũ rồi thêm lại;
+> tên entity giữ nguyên nên entity_id / dashboard / long-term statistics vẫn khớp.
+>
+> Các chuỗi `smartsolar_mppt` còn lại trong tài liệu này là **dữ liệu lịch sử** (đường dẫn cũ,
+> log cũ, ví dụ entity_id sinh từ tên thiết bị), không phải cấu hình hiện hành.
 >
 > ⚠️ Nội dung tổng hợp **2026-06-22**, đã bổ sung mục [7.4 — audit v1.5.1](#74-đã-fix-trong-v151-2026-09-27--audit-toàn-diện).
 > Đối chiếu lại entity thực tế nếu có sai lệch.
@@ -1239,3 +1248,4 @@ sudo cat /config/.storage/core.config_entries | python3 -m json.tool
 ---
 
 *Last updated: 2026-09-27 — audit v1.5.1 (12 bug đã sửa, 261 test, deploy + verify live).*
+*v2.0.0 (2026-09-27): đổi domain sang `smartsolar_ha`, 13 bug thật đã sửa kèm test hồi quy — 366 test. Xem `CLAUDE.md` mục "v2.0.0 — Domain Rename + Audit Fixes".*

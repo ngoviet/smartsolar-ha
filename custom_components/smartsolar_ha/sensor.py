@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
@@ -26,7 +27,7 @@ from .const import (
     get_aggregation,
 )
 from .coordinator import SmartSolarDataUpdateCoordinator
-from .helpers import coerce_float, stream_dict
+from .helpers import as_list, coerce_float, device_logs, stream_dict
 
 _LOGGER = logging.getLogger(SENSOR_LOGGER)
 
@@ -238,13 +239,25 @@ class SmartSolarSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         if self._sensor_type == "status":
             try:
                 return STATUS_MAPPING.get(int(float(value)), f"Unknown ({value})")
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 return f"Unknown ({value})"
 
         # Convert to float for numeric sensors
         try:
             num_value = float(value)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
+            return None
+
+        # NaN slips through every ``>``/``<`` comparison below, so it has to be
+        # rejected explicitly: json.loads accepts the bare NaN/Infinity literals
+        # that appear in some MQTT payloads, and a NaN state poisons Home
+        # Assistant's long-term statistics for the sensor.
+        if not math.isfinite(num_value):
+            _LOGGER.debug(
+                "Sensor %s value %r is not finite — treating as invalid",
+                self._sensor_type,
+                num_value,
+            )
             return None
 
         # Validate against max_value to reject garbage/overflow readings
@@ -330,7 +343,7 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
             return self._calculate_from_device_logs()
 
         # ── Prefer the server-side synthesis value ──
-        synthesis_streams = self.coordinator.data.get("synthesisStreams")
+        synthesis_streams = as_list(self.coordinator.data.get("synthesisStreams"))
         if synthesis_streams:
             field_name = SYNTHESIS_FIELD_MAPPING.get(self._sensor_type, self._sensor_type)
             for stream in synthesis_streams:
@@ -341,7 +354,7 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
                     break
                 try:
                     num_value = float(value)
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     break
                 return self._apply_status_mapping(num_value)
 
@@ -355,8 +368,8 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
 
     def _calculate_from_device_logs(self) -> float | str | None:
         """Aggregate the value from the individual device logs."""
-        device_logs = self.coordinator.data.get("deviceLogs") or []
-        if not device_logs:
+        device_log_entries = device_logs(self.coordinator.data)
+        if not device_log_entries:
             _LOGGER.debug(
                 "Synthesis sensor %s - no deviceLogs available for aggregation",
                 self._sensor_type,
@@ -364,7 +377,7 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
             return None
 
         values: list[float] = []
-        for device_log in device_logs:
+        for device_log in device_log_entries:
             value = self._device_log_value(device_log, raw_status=True)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 values.append(float(value))
@@ -420,12 +433,15 @@ class SmartSolarProjectDeviceSensor(SmartSolarSensor):
         if not self.coordinator.data:
             return None
 
-        device_logs = self.coordinator.data.get("deviceLogs", [])
-        if not device_logs:
-            _LOGGER.warning("No deviceLogs in coordinator data, keys: %s", list(self.coordinator.data.keys()))
+        device_log_entries = device_logs(self.coordinator.data)
+        if not device_log_entries:
+            # Debug, not warning: this fires for every sensor of the entry on
+            # every poll (and once per second per MQTT message), which used to
+            # flood the log while the first refresh was still failing.
+            _LOGGER.debug("No deviceLogs in coordinator data, keys: %s", list(self.coordinator.data.keys()))
             return None
 
-        for device_log in device_logs:
+        for device_log in device_log_entries:
             if not isinstance(device_log, dict):
                 continue
             if str(device_log.get("deviceGuid")) == str(self._device_guid):
@@ -434,7 +450,7 @@ class SmartSolarProjectDeviceSensor(SmartSolarSensor):
         _LOGGER.debug(
             "Device GUID %s not found in deviceLogs. Available GUIDs: %s",
             self._device_guid,
-            [str(log.get("deviceGuid")) for log in device_logs],
+            [str(log.get("deviceGuid")) for log in device_log_entries if isinstance(log, dict)],
         )
         return None
 

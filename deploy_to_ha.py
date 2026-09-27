@@ -3,7 +3,7 @@
 Pipeline:
   1. ruff check + format --check + mypy + pytest        (refuse to ship red)
   2. archive the currently deployed files               (rollback safety)
-  3. upload every file from custom_components/smartsolar_mppt/
+  3. upload every file from custom_components/smartsolar_ha/
   4. drop __pycache__ inside the container
   5. restart Home Assistant and wait for the API to answer
 
@@ -26,15 +26,20 @@ from pathlib import Path
 import paramiko
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-SRC_DIR = PROJECT_ROOT / "custom_components" / "smartsolar_mppt"
+SRC_DIR = PROJECT_ROOT / "custom_components" / "smartsolar_ha"
 REMOTE_ROOT = "/homeassistant/custom_components"
-REMOTE_DIR = f"{REMOTE_ROOT}/smartsolar_mppt"
+REMOTE_DIR = f"{REMOTE_ROOT}/smartsolar_ha"
 ARCHIVE_DIR = PROJECT_ROOT / "_local_archive" / "deployed"
 VENV_PYTHON = PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
 
 HA_HOST = os.environ.get("HA_HOST", "192.168.10.15")
 HA_USER = os.environ.get("HA_USER", "vokupt")
 HA_URL = os.environ.get("HA_URL", f"http://{HA_HOST}:8123")
+
+# Keep in sync with .github/workflows/ci.yml: the local gate used to lint only
+# upload_to_ha.py, so the deploy script and verify_live.py were never checked
+# before shipping even though CI checks the first one.
+SOURCES = ["custom_components/", "tests/", "upload_to_ha.py", "deploy_to_ha.py", "verify_live.py"]
 
 
 def load_env() -> dict[str, str]:
@@ -58,8 +63,8 @@ def run_checks() -> None:
     ruff = str(VENV_PYTHON.parent / "ruff.exe") if VENV_PYTHON.exists() else "ruff"
 
     checks = [
-        ("ruff check", [ruff, "check", "custom_components/", "tests/", "upload_to_ha.py"]),
-        ("ruff format", [ruff, "format", "--check", "custom_components/", "tests/", "upload_to_ha.py"]),
+        ("ruff check", [ruff, "check", *SOURCES]),
+        ("ruff format", [ruff, "format", "--check", *SOURCES]),
         ("mypy", [python, "-m", "mypy", "custom_components/"]),
         ("pytest", [python, "-m", "pytest", "tests/", "-q", "--no-header", "-p", "no:cacheprovider"]),
     ]
@@ -98,9 +103,9 @@ def archive_remote(ssh: paramiko.SSHClient) -> Path:
     """Download the currently deployed integration as a tarball."""
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    target = ARCHIVE_DIR / f"smartsolar_mppt_{stamp}.tar.gz"
+    target = ARCHIVE_DIR / f"smartsolar_ha_{stamp}.tar.gz"
 
-    _stdin, stdout, _stderr = ssh.exec_command(f"sudo tar -C {REMOTE_ROOT} -czf - smartsolar_mppt")
+    _stdin, stdout, _stderr = ssh.exec_command(f"sudo tar -C {REMOTE_ROOT} -czf - smartsolar_ha")
     data = stdout.read()
     stdout.channel.recv_exit_status()
     target.write_bytes(data)
@@ -155,7 +160,7 @@ def restart_ha(ssh: paramiko.SSHClient, env: dict[str, str]) -> None:
                     info = json.loads(response.read())
                     print(f"  HA is back: {info.get('version')}")
                     return
-        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError):
+        except urllib.error.URLError, TimeoutError, ConnectionError, OSError:
             continue
     raise RuntimeError("HA did not come back within 300s")
 

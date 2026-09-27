@@ -4,11 +4,25 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.error
 import urllib.request
 from pathlib import Path
 
 HA_HOST = os.environ.get("HA_HOST", "192.168.10.15")
 BASE = f"http://{HA_HOST}:8123"
+
+
+def as_float(value: object) -> float | None:
+    """Return ``value`` as a float, or None when the state is not numeric.
+
+    Entity states are strings and 'unknown'/'unavailable' are normal values;
+    calling ``float()`` on them used to abort the whole verification with a
+    traceback instead of reporting a FAIL line.
+    """
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except TypeError, ValueError:
+        return None
 
 
 def load_env() -> dict[str, str]:
@@ -37,8 +51,6 @@ def live_signal_quality(env: dict[str, str]) -> dict[str, int]:
     then 'unknown' is the truthful state for that device's WiFi sensor. The
     credentials are optional — without them the check is skipped.
     """
-    import urllib.error
-
     username = env.get("SMARTSOLAR_USER")
     password = env.get("SMARTSOLAR_PASS")
     if not username or not password:
@@ -65,15 +77,22 @@ def live_signal_quality(env: dict[str, str]) -> dict[str, int]:
             for log in payload.get("deviceLogs", [])
             if log.get("signalQuality") is not None
         }
-    except (urllib.error.URLError, KeyError, ValueError, TimeoutError):
+    except urllib.error.URLError, KeyError, ValueError, TimeoutError:
         return {}
 
 
 def main() -> int:
     env = load_env()
-    token = env["HA_TOKEN"]
+    token = env.get("HA_TOKEN")
+    if not token:
+        print("HA_TOKEN is not set (checked the environment and .env)")
+        return 2
 
-    states = {s["entity_id"]: s for s in api("/api/states", token)}
+    try:
+        states = {s["entity_id"]: s for s in api("/api/states", token)}
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError) as err:
+        print(f"Could not read states from {BASE}: {err}")
+        return 2
     solar = {k: v for k, v in states.items() if "smartsolar" in k}
     prefix = "sensor.technology_smartsolar_mppt_project_1072_"
 
@@ -131,11 +150,13 @@ def main() -> int:
 
     # 3. Battery voltage must be ~24 V, never the sum of both chargers (~53 V).
     total_bat = states.get(f"{prefix}total_battery_voltage")
+    total_bat_value = as_float(total_bat["state"]) if total_bat else None
     if total_bat is None:
         check(False, "total_battery_voltage missing")
+    elif total_bat_value is None:
+        check(False, f"total_battery_voltage = {total_bat['state']!r} (expected a number in 20-32 V)")
     else:
-        value = float(total_bat["state"])
-        check(20 <= value <= 32, f"total_battery_voltage = {value} V (must be one bus, not a sum)")
+        check(20 <= total_bat_value <= 32, f"total_battery_voltage = {total_bat_value} V (must be one bus, not a sum)")
 
     # 4. The per-device sensors must still be intact.
     for entity in (
@@ -150,8 +171,13 @@ def main() -> int:
     # 5. PV1 must be the lowest GUID (547611) — the stable ordering contract.
     pv1 = states.get(f"{prefix}pv1_total_energy")
     pv1_expected = 388.019
-    if pv1 is not None:
-        delta = abs(float(pv1["state"]) - pv1_expected)
+    pv1_value = as_float(pv1["state"]) if pv1 else None
+    if pv1 is None:
+        check(False, "pv1_total_energy missing")
+    elif pv1_value is None:
+        check(False, f"pv1_total_energy = {pv1['state']!r} (expected a number near {pv1_expected})")
+    else:
+        delta = abs(pv1_value - pv1_expected)
         check(delta < 20, f"pv1_total_energy = {pv1['state']} (expected ~{pv1_expected} for GUID 547611)")
 
     # 6. The number entity must be present.

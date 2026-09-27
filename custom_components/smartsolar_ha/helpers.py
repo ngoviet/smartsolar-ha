@@ -6,6 +6,7 @@ platforms can use them without import cycles.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 
@@ -14,13 +15,44 @@ def coerce_float(value: Any) -> float | None:
 
     Rejects booleans: ``float(True) == 1.0`` would silently turn a flag into a
     measurement.
+
+    Also rejects non-finite results. ``json.loads`` accepts the non-standard
+    ``NaN`` / ``Infinity`` / ``-Infinity`` literals, so a device or the cloud
+    API can put them into a payload; a NaN state then poisons Home Assistant's
+    long-term statistics for that sensor (every derived value stays NaN).
     """
     if value is None or isinstance(value, bool):
         return None
     try:
-        return float(value)
-    except (ValueError, TypeError):
+        result = float(value)
+    except ValueError, TypeError:
         return None
+    return result if math.isfinite(result) else None
+
+
+def as_list(value: Any) -> list[Any]:
+    """Return ``value`` when it really is a list, otherwise an empty list.
+
+    Cloud responses are third-party JSON: a field the integration iterates has
+    to be checked before use, because ``for x in 5`` raises ``TypeError`` and
+    would take down the whole poll/entity update.
+    """
+    return value if isinstance(value, list) else []
+
+
+def device_logs(data: Any) -> list[Any]:
+    """Return ``data["deviceLogs"]`` as a list, whatever the API actually sent.
+
+    The response is third-party JSON: the field has been observed absent,
+    ``null``, and (in defensive tests) a scalar. Every consumer must treat a
+    non-list as "no device logs" instead of raising — a bare
+    ``len(data.get("deviceLogs", []))`` inside a debug statement used to fail an
+    entire poll cycle with ``UpdateFailed: object of type 'NoneType' has no
+    len()`` whenever the server answered ``"deviceLogs": null``.
+    """
+    if not isinstance(data, dict):
+        return []
+    return as_list(data.get("deviceLogs"))
 
 
 def stream_dict(data_streams: Any) -> dict[str, Any]:
@@ -49,5 +81,5 @@ def guid_sort_key(guid: str) -> tuple[int, int | str]:
     """
     try:
         return (0, int(guid))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return (1, guid)

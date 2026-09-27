@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from custom_components.smartsolar_mppt.const import (
+from custom_components.smartsolar_ha.const import (
     API_BASE_URL,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
@@ -131,7 +131,7 @@ class TestBuildDeviceInfo:
         """Project mode with project_id returns project-named device."""
         info = build_device_info("entry123", mode="project", project_id="1072")
         assert info["name"] == "SmartSolar MPPT Project 1072"
-        assert ("smartsolar_mppt", "entry123") in info["identifiers"]
+        assert ("smartsolar_ha", "entry123") in info["identifiers"]
         assert info["manufacturer"] == "SmartSolar"
         assert info["model"] == "MPPT Controller"
 
@@ -155,7 +155,7 @@ class TestConstants:
     """Tests for module-level constants."""
 
     def test_domain(self):
-        assert DOMAIN == "smartsolar_mppt"
+        assert DOMAIN == "smartsolar_ha"
 
     def test_api_base_url(self):
         assert API_BASE_URL == "https://api.smartsolar.io.vn"

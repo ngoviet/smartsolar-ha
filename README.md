@@ -4,7 +4,7 @@
 [![GitHub release](https://img.shields.io/github/release/ngoviet/smartsolar-ha.svg)](https://github.com/ngoviet/smartsolar-ha/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![HA Version](https://img.shields.io/badge/Home%20Assistant-2026.9%2B-41BDF5)](https://www.home-assistant.io)
-[![Tests](https://img.shields.io/badge/tests-261%20passed-brightgreen)](https://github.com/ngoviet/smartsolar-ha)
+[![Tests](https://img.shields.io/badge/tests-366%20passed-brightgreen)](https://github.com/ngoviet/smartsolar-ha)
 [![Python](https://img.shields.io/badge/python-3.14%2B-blue)](https://www.python.org)
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ngoviet&repository=smartsolar-ha&category=integration)
@@ -70,9 +70,13 @@ Compatible with other SmartSolar devices using the same cloud API.
 
 ```bash
 cd /config/custom_components
-git clone https://github.com/ngoviet/smartsolar-ha.git smartsolar_mppt
+# the folder name must match the integration domain
+git clone https://github.com/ngoviet/smartsolar-ha.git smartsolar_ha
 # Restart Home Assistant
 ```
+
+> Upgrading from v1.x? The folder and domain changed from `smartsolar_mppt` to
+> `smartsolar_ha` — see the [v2.0.0 changelog](#v200--domain-rename--audit-fixes).
 
 ## Configuration
 
@@ -115,6 +119,58 @@ SmartSolarDataUpdateCoordinator
 ```
 
 ## Changelog
+
+### v2.0.0 — domain rename + audit fixes
+
+> ⚠️ **Breaking change: the integration domain is now `smartsolar_ha`.**
+> Home Assistant identifies an integration by its folder name, which must equal
+> the `domain` in `manifest.json`, so this cannot be a drop-in update:
+>
+> 1. Delete the old `custom_components/smartsolar_mppt/` folder (and the old
+>    config entry in **Settings → Devices & Services**, if it is still listed).
+> 2. Install/update to v2.0.0 and add the integration again with your
+>    SmartSolar account credentials.
+>
+> Entity names are unchanged, so existing entity IDs, dashboards and long-term
+> statistics keep working; only the config entry itself has to be re-added.
+
+**Correctness fixes:**
+- **A `"deviceLogs": null` response no longer kills the poll.** A `len()` call in a
+  debug statement raised `UpdateFailed: object of type 'NoneType' has no len()`
+  (debug arguments are evaluated even when debug logging is off), leaving every
+  entity unavailable. `deviceLogs` is now normalized in one shared helper used by
+  the coordinator, the sensors and diagnostics.
+- **NaN/Infinity can no longer become a sensor state.** `json.loads` accepts the
+  bare `NaN`/`Infinity` literals, and NaN slips through every `> max_value`
+  comparison, so it used to reach Home Assistant and poison that sensor's
+  long-term statistics. All non-finite values are rejected at the value layer.
+- **A rejected API token recovers by itself.** On HTTP 401 the cached token is now
+  discarded, so the next poll logs in again — previously the ~30-day token stayed
+  "valid" and every later poll failed until Home Assistant was restarted.
+- **Non-object API responses are classified.** A JSON list/HTML body used to
+  escape as `AttributeError`, or as an unclassified `JSONDecodeError`.
+- **HTTP 408/429 are retried** with the same backoff as a 5xx (`Retry-After`
+  situations are transient; 4xx client errors still fail fast).
+- **No more log flooding** while the cloud has no device logs: a per-sensor,
+  per-poll `WARNING` became `DEBUG`.
+- **MQTT `null` fields are dropped** instead of being written into `dataStreams`
+  as the literal string `"None"`, which shadowed the real value.
+- **`connected` no longer lies after shutdown** — stopping the MQTT client (or a
+  message loop that ends) clears the flag that diagnostics report.
+- **`refresh_token` now requires `entry_id`** (as `services.yaml` always
+  documented). Without it the service silently did nothing; an unknown entry is
+  now reported as a service validation error.
+- Extra hardening: `verify_live.py` reports a `FAIL` line instead of crashing when
+  a state is `unknown`, and the deploy gate lints the same files as CI.
+
+**Tooling:**
+- **366 tests** (was 261), including a regression test per fix above and a new
+  `tests/test_helpers.py`.
+- `requires-python`/classifiers now state the real floor (HA 2026.x needs
+  **≥ 3.14.2**) and `ruff` targets `py314`; `deploy_to_ha.py` and CI lint the same
+  file list.
+- Removed the unused `custom_components/…/hacs.json`: HACS only reads the
+  `hacs.json` at the repository root, and that copy contradicted it.
 
 ### v1.5.1 (2026-09-27) — audit release
 
@@ -220,7 +276,7 @@ SmartSolarDataUpdateCoordinator
 | No sensor data | Verify credentials; check device is online in SmartSolar app |
 | Integration won't load | Check HA logs; verify `aiohttp` is installed |
 | API errors (502) | SmartSolar cloud may be temporarily down — retries automatically |
-| Token expired | Auto-refresh 7 days before expiry; use `smartsolar_mppt.refresh_token` service to force refresh |
+| Token expired | Auto-refresh 7 days before expiry; use `smartsolar_ha.refresh_token` service to force refresh |
 | MQTT not connecting | Check that `aiomqtt>=2.0` is installed; verify network allows WSS on port 8084 |
 | WiFi Signal shows "unknown" | Some older firmware doesn't include signalQuality field — normal degradation |
 | MQTT "connection failed" warnings | Broker temporarily unreachable — auto-reconnects in 5s; REST polling continues |
@@ -229,12 +285,12 @@ SmartSolarDataUpdateCoordinator
 
 | Service | Description |
 |---------|-------------|
-| `smartsolar_mppt.refresh_token` | Manually refresh the API authentication token |
+| `smartsolar_ha.refresh_token` | Manually refresh the API authentication token (requires `entry_id`) |
 
 ## Requirements
 
 - Home Assistant **2026.9** or newer
-- Python **3.14+** (required by Home Assistant 2026.x)
+- Python **3.14.2+** (required by Home Assistant 2026.x)
 - `aiohttp >= 3.8.0`
 - `aiomqtt >= 2.0` (optional but recommended — enables real-time MQTT updates)
 - SmartSolar account (registered at [smartsolar.io.vn](https://smartsolar.io.vn))

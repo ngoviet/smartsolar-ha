@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from unittest.mock import MagicMock
 
 import pytest
 
-from custom_components.smartsolar_mppt.const import SENSOR_TYPES
-from custom_components.smartsolar_mppt.sensor import (
+from custom_components.smartsolar_ha.const import SENSOR_TYPES
+from custom_components.smartsolar_ha.sensor import (
     SmartSolarDeviceSensor,
     SmartSolarProjectDeviceSensor,
     SmartSolarProjectSynthesisSensor,
@@ -563,7 +564,8 @@ class TestMQTTDataMerging:
         """_merge_mqtt_into_data updates deviceLogs for project mode."""
         from tests.conftest import SAMPLE_PROJECT_RESPONSE
 
-        api_data = SAMPLE_PROJECT_RESPONSE.copy()
+        # deepcopy: the merge rewrites nested deviceLogs entries in place.
+        api_data = deepcopy(SAMPLE_PROJECT_RESPONSE)
         mqtt_data = {"pv_voltage": 52.0, "signal_quality": 100}
         mock_coordinator._merge_mqtt_into_data(api_data, "547611", mqtt_data)
         # Find device 547611 and check updated values
@@ -587,3 +589,156 @@ class TestMQTTDataMerging:
         assert api_data["deviceLogs"][0]["deviceGuid"] == "new_device_999"
         streams = {s["name"]: s["value"] for s in api_data["deviceLogs"][0]["dataStreams"]}
         assert streams["signal_quality"] == "70"
+
+
+def _entry(mode: str = "device", **data):
+    entry = MagicMock()
+    entry.entry_id = "test_entry"
+    entry.data = {"mode": mode, **data}
+    return entry
+
+
+def _device_sensor(sensor_type: str, value, *, mode: str = "device"):
+    """Build a device-mode sensor whose payload holds ``value``."""
+    coordinator = MagicMock()
+    coordinator.data = {"lastMessage": {"dataStreams": [{"name": sensor_type, "value": value}]}}
+    return SmartSolarDeviceSensor(
+        coordinator=coordinator,
+        config_entry=_entry(mode, chipset_ids=["547611"]),
+        sensor_type=sensor_type,
+        sensor_info=SENSOR_TYPES[sensor_type],
+        device_guid="547611",
+    )
+
+
+class TestNonFiniteSensorValues:
+    """NaN/Infinity must never reach a sensor state.
+
+    ``json.loads`` accepts the bare NaN/Infinity literals, so a device can put
+    them in a payload. NaN also survives the ``> max_value`` check (every
+    comparison with NaN is False), and a NaN state poisons the long-term
+    statistics Home Assistant derives from the sensor.
+    """
+
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf"), "nan", "NaN", "Infinity"])
+    def test_device_sensor_rejects_non_finite_values(self, value):
+        assert _device_sensor("charge_power", value).native_value is None
+
+    @pytest.mark.parametrize("value", [float("nan"), float("-inf")])
+    def test_negative_infinity_is_not_below_the_floor(self, value):
+        """-inf is not greater than max_value, so the max check alone misses it."""
+        assert _device_sensor("bat_current", value).native_value is None
+
+    def test_finite_boundary_values_still_pass(self):
+        assert _device_sensor("charge_power", 0).native_value == 0.0
+        assert _device_sensor("charge_power", 15000).native_value == 15000.0
+
+    def test_status_flag_still_maps(self):
+        """The non-finite guard must not change the status mapping path."""
+        assert _device_sensor("status", "1").native_value == "Charging"
+
+    def test_project_device_sensor_rejects_non_finite_top_level_signal(self):
+        """The REST signalQuality lives on the deviceLog, not in dataStreams."""
+        coordinator = MagicMock()
+        coordinator.data = {
+            "deviceLogs": [
+                {"deviceGuid": "547611", "signalQuality": float("nan"), "dataStreams": []},
+            ]
+        }
+        sensor = SmartSolarProjectDeviceSensor(
+            coordinator=coordinator,
+            config_entry=_entry("project", project_id="1072"),
+            sensor_type="signal_quality",
+            sensor_info=SENSOR_TYPES["signal_quality"],
+            device_guid="547611",
+            device_index=1,
+        )
+        assert sensor.native_value is None
+
+    def test_aggregation_skips_non_finite_device(self):
+        """A NaN charger must not turn the project total into NaN."""
+        coordinator = MagicMock()
+        coordinator.data = {
+            "deviceLogs": [
+                {
+                    "deviceGuid": "547611",
+                    "dataStreams": [{"name": "charge_power", "value": float("nan")}],
+                },
+                {
+                    "deviceGuid": "14756976",
+                    "dataStreams": [{"name": "charge_power", "value": "200"}],
+                },
+            ]
+        }
+        sensor = SmartSolarProjectSynthesisSensor(
+            coordinator=coordinator,
+            config_entry=_entry("project", project_id="1072"),
+            sensor_type="charge_power",
+            sensor_info=SENSOR_TYPES["charge_power"],
+        )
+        assert sensor.native_value == 200.0
+
+
+class TestMissingDeviceLogs:
+    """A null/scalar deviceLogs must not break entity updates either.
+
+    The coordinator no longer fails the poll for these payloads, so the raw
+    value still reaches the entities — and ``for x in 5`` raises TypeError.
+    """
+
+    @pytest.mark.parametrize("device_logs_value", [None, 7, "oops", {"547611": {}}])
+    def test_project_sensors_return_none(self, device_logs_value):
+        coordinator = MagicMock()
+        coordinator.data = {"deviceLogs": device_logs_value, "synthesisStreams": None}
+
+        synthesis = SmartSolarProjectSynthesisSensor(
+            coordinator=coordinator,
+            config_entry=_entry("project", project_id="1072"),
+            sensor_type="charge_power",
+            sensor_info=SENSOR_TYPES["charge_power"],
+        )
+        per_device = SmartSolarProjectDeviceSensor(
+            coordinator=coordinator,
+            config_entry=_entry("project", project_id="1072"),
+            sensor_type="charge_power",
+            sensor_info=SENSOR_TYPES["charge_power"],
+            device_guid="547611",
+            device_index=1,
+        )
+
+        assert synthesis.native_value is None
+        assert per_device.native_value is None
+
+    @pytest.mark.parametrize("synthesis_value", [None, 7, "oops"])
+    def test_non_list_synthesis_streams_are_ignored(self, synthesis_value):
+        """The server value is used when present, aggregation otherwise."""
+        coordinator = MagicMock()
+        coordinator.data = {
+            "synthesisStreams": synthesis_value,
+            "deviceLogs": [{"deviceGuid": "547611", "dataStreams": [{"name": "pv_voltage", "value": "24.0"}]}],
+        }
+        sensor = SmartSolarProjectSynthesisSensor(
+            coordinator=coordinator,
+            config_entry=_entry("project", project_id="1072"),
+            sensor_type="pv_voltage",
+            sensor_info=SENSOR_TYPES["pv_voltage"],
+        )
+        assert sensor.native_value == 24.0
+
+    def test_missing_device_logs_logs_at_debug_not_warning(self, caplog):
+        """One WARNING per sensor per poll (plus 1 Hz MQTT) flooded the log."""
+        coordinator = MagicMock()
+        coordinator.data = {"deviceLogs": None}
+        sensor = SmartSolarProjectDeviceSensor(
+            coordinator=coordinator,
+            config_entry=_entry("project", project_id="1072"),
+            sensor_type="charge_power",
+            sensor_info=SENSOR_TYPES["charge_power"],
+            device_guid="547611",
+            device_index=1,
+        )
+
+        with caplog.at_level("WARNING"):
+            assert sensor.native_value is None
+
+        assert caplog.records == []

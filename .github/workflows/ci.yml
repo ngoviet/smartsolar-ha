@@ -23,11 +23,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install "ruff>=0.4" "mypy>=1.9" "homeassistant==2026.9.2"
 
+      # Same file list as SOURCES in deploy_to_ha.py, so the local gate can
+      # never be weaker than CI.
       - name: Ruff lint
-        run: ruff check custom_components/ tests/ upload_to_ha.py deploy_to_ha.py
+        run: ruff check custom_components/ tests/ upload_to_ha.py deploy_to_ha.py verify_live.py
 
       - name: Ruff format check
-        run: ruff format --check custom_components/ tests/ upload_to_ha.py deploy_to_ha.py
+        run: ruff format --check custom_components/ tests/ upload_to_ha.py deploy_to_ha.py verify_live.py
 
       # Not `|| true`: this gate was previously disabled and let 29 type errors
       # accumulate, including the real "callable | None" and DeviceInfo bugs.
