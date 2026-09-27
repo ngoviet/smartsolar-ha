@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from copy import deepcopy
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.smartsolar_ha.const import MQTT_FIELD_MAPPING
+from custom_components.smartsolar_ha.const import MQTT_FIELD_MAPPING, MQTT_RECONNECT_DELAY
 from custom_components.smartsolar_ha.mqtt_client import (
     HAS_AIOMQTT,
     SmartSolarMQTTClient,
@@ -303,6 +304,49 @@ class TestMQTTMessageParsing:
         assert client._on_data.call_args[0][1] == {"pv_voltage": 5.0}
 
     @pytest.mark.asyncio
+    async def test_datastreams_names_are_mapped_like_the_flat_format(self):
+        """Firmware also publishes the legacy names inside dataStreams.
+
+        Those fields used to be stored under names no sensor reads, so every
+        value in them was silently dropped.
+        """
+        client = self._make_client()
+        msg = self._make_mock_message(
+            "manhquan/device/mppt_charger/log/45a/547611",
+            {
+                "dataStreams": [
+                    {"name": "charging_power", "value": "269.5"},
+                    {"name": "yield_today", "value": "3.2"},
+                    {"name": "yield_total", "value": "1260.0"},
+                    {"name": "pv_voltage", "value": "48.5"},
+                ]
+            },
+        )
+
+        await client._handle_message(msg)
+
+        assert client._on_data.call_args[0][1] == {
+            "charge_power": "269.5",
+            "today_kwh": "3.2",
+            "total_kwh": "1260.0",
+            "pv_voltage": "48.5",
+        }
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("name", [[], {}, 5, None, True])
+    async def test_non_string_stream_names_are_skipped(self, name):
+        """An unhashable name used to raise inside the dict assignment."""
+        client = self._make_client()
+        msg = self._make_mock_message(
+            "manhquan/device/mppt_charger/log/45a/547611",
+            {"dataStreams": [{"name": name, "value": 1.0}, {"name": "pv_voltage", "value": 5.0}]},
+        )
+
+        await client._handle_message(msg)
+
+        assert client._on_data.call_args[0][1] == {"pv_voltage": 5.0}
+
+    @pytest.mark.asyncio
     async def test_numeric_guid_in_topic_is_forwarded_as_string(self):
         """GUIDs are matched as strings everywhere."""
         client = self._make_client()
@@ -444,3 +488,121 @@ class TestConnectionState:
             await client._message_loop()
 
         assert client.connected is False
+
+
+class TestMessageLoopReconnect:
+    """A closed stream must back off, and leaving the loop must always clean up."""
+
+    def _make_client(self):
+        return SmartSolarMQTTClient(
+            device_guids=["547611"],
+            on_data_callback=AsyncMock(),
+            username="web_app",
+            password="cGFzcw==",
+        )
+
+    @pytest.mark.asyncio
+    async def test_clean_stream_end_waits_before_reconnecting(self):
+        """A clean end of ``client.messages`` used to reconnect with no delay.
+
+        The loop only slept in the exception path, so a broker that closes the
+        subscription without raising sent the client straight back into connect
+        — a tight loop against a shared broker. ``connects`` is bounded so this
+        test fails on the old behaviour instead of spinning forever.
+        """
+        client = self._make_client()
+        client._running = True
+        sleeps: list[float] = []
+        connects = 0
+
+        async def clean_connect(inner_self) -> None:
+            nonlocal connects
+            connects += 1
+            inner_self._connected = True
+            if connects >= 3:
+                inner_self._running = False
+
+        async def fake_sleep(delay):
+            sleeps.append(delay)
+            client._running = False
+
+        with (
+            patch.object(SmartSolarMQTTClient, "_connect_and_listen", clean_connect),
+            patch("custom_components.smartsolar_ha.mqtt_client.asyncio.sleep", fake_sleep),
+        ):
+            await client._message_loop()
+
+        assert connects == 1
+        assert sleeps == [MQTT_RECONNECT_DELAY]
+        assert client.connected is False
+
+    @pytest.mark.asyncio
+    async def test_failure_path_still_waits_before_reconnecting(self):
+        client = self._make_client()
+        client._running = True
+        sleeps: list[float] = []
+        connects = 0
+
+        async def failing_connect(inner_self) -> None:
+            nonlocal connects
+            connects += 1
+            inner_self._connected = True
+            if connects >= 3:
+                inner_self._running = False
+            raise OSError("broker unreachable")
+
+        async def fake_sleep(delay):
+            sleeps.append(delay)
+            client._running = False
+
+        with (
+            patch.object(SmartSolarMQTTClient, "_connect_and_listen", failing_connect),
+            patch("custom_components.smartsolar_ha.mqtt_client.asyncio.sleep", fake_sleep),
+        ):
+            await client._message_loop()
+
+        assert connects == 1
+        assert sleeps == [MQTT_RECONNECT_DELAY]
+
+    @pytest.mark.asyncio
+    async def test_cancellation_during_backoff_still_clears_state(self):
+        """Cancelling while the loop sleeps must not skip the cleanup tail.
+
+        The reconnect sleep used to sit inside the ``except`` handler, so a
+        ``CancelledError`` raised there propagated past the trailing
+        ``_connected = False`` / ``_client = None`` lines and diagnostics kept
+        reporting a live connection with a dead client reference.
+        """
+        client = self._make_client()
+        client._running = True
+        client._connected = True
+        client._client = MagicMock()
+
+        async def failing_connect(inner_self) -> None:
+            inner_self._connected = True
+            raise OSError("broker unreachable")
+
+        async def cancelled_sleep(_delay):
+            raise asyncio.CancelledError
+
+        with (
+            patch.object(SmartSolarMQTTClient, "_connect_and_listen", failing_connect),
+            patch("custom_components.smartsolar_ha.mqtt_client.asyncio.sleep", cancelled_sleep),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await client._message_loop()
+
+        assert client.connected is False
+        assert client._client is None
+
+    @pytest.mark.asyncio
+    async def test_stop_after_clean_close_leaves_no_client(self):
+        """``stop()`` on an already-closed stream must be a clean no-op."""
+        client = self._make_client()
+        client._connected = True
+        client._client = MagicMock()
+
+        await client.stop()
+
+        assert client.connected is False
+        assert client._client is None

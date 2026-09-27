@@ -52,7 +52,6 @@ def make_flow(*, api=None):
     flow._chipset_ids = None
     flow._project_method = None
     flow._project_id = None
-    flow._device_types = None
     flow._api = None
     flow._api_username = None
     flow._api_password = None
@@ -281,10 +280,10 @@ class TestChipsetIdsStep:
         flow._mode = "device"
         flow._device_type = 2
 
-        result = await flow.async_step_chipset_ids({"chipset_ids": "547611, 14756976"})
+        result = await flow.async_step_chipset_ids({"chipset_ids": " 547611 "})
 
         assert result["type"] == "create_entry"
-        assert result["data"]["chipset_ids"] == ["547611", "14756976"]
+        assert result["data"]["chipset_ids"] == ["547611"]
         assert result["data"]["mode"] == "device"
 
     @pytest.mark.asyncio
@@ -342,7 +341,33 @@ class TestProjectDevicesStep:
 
         assert result["type"] == "create_entry"
         assert result["data"]["chipset_ids"] == ["547611", "14756976"]
-        assert result["data"]["device_types"] == [2, 2]
+        assert result["data"]["device_type"] == 2
+
+    @pytest.mark.asyncio
+    async def test_entry_data_matches_the_documented_contract(self):
+        """Entry data carries exactly the documented keys — no dead extras.
+
+        ``device_types`` was written here but read nowhere: it duplicated
+        ``device_type`` and made the project-by-devices entry shape differ from
+        every other flow's.
+        """
+        api = MagicMock()
+        api.get_metrics = AsyncMock(return_value={})
+        flow = make_flow(api=api)
+        flow._username = "vokupt"
+        flow._password = "pw"
+        flow._mode = "project"
+
+        result = await flow.async_step_project_devices({"manh_quan_ids": "547611"})
+
+        assert set(result["data"]) == {
+            "username",
+            "password",
+            "mode",
+            "device_type",
+            "chipset_ids",
+            "update_interval",
+        }
 
     @pytest.mark.asyncio
     async def test_missing_credentials_reports_unknown(self):
@@ -350,6 +375,72 @@ class TestProjectDevicesStep:
         flow._mode = None
         result = await flow.async_step_project_devices({"manh_quan_ids": "547611"})
         assert result["errors"]["base"] == "unknown"
+
+
+class TestDeviceModeSingleId:
+    """Device mode reads one charger, so it must refuse a list.
+
+    The extra ids used to be accepted and then ignored — and because device mode
+    merges every *accepted* device into one ``lastMessage.dataStreams``, the
+    second charger's readings ended up on the first charger's sensors.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("value", ["547611,14756976", "547611, 14756976", "a,b,c"])
+    async def test_multiple_ids_are_rejected(self, value):
+        flow = make_flow(api=MagicMock())
+        flow._mode = "device"
+        flow._device_type = 2
+
+        result = await flow.async_step_chipset_ids({"chipset_ids": value})
+
+        assert result["errors"]["base"] == "single_chipset_id_required"
+
+    @pytest.mark.asyncio
+    async def test_multiple_ids_never_reach_the_api(self):
+        api = MagicMock()
+        api.get_metrics = AsyncMock(return_value={})
+        flow = make_flow(api=api)
+        flow._mode = "device"
+        flow._device_type = 2
+
+        await flow.async_step_chipset_ids({"chipset_ids": "547611,14756976"})
+
+        api.get_metrics.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_single_id_still_creates_the_entry(self):
+        api = MagicMock()
+        api.get_metrics = AsyncMock(return_value={})
+        flow = make_flow(api=api)
+        flow._username = "vokupt"
+        flow._password = "pw"
+        flow._mode = "device"
+        flow._device_type = 2
+
+        result = await flow.async_step_chipset_ids({"chipset_ids": "547611"})
+
+        assert result["type"] == "create_entry"
+        assert result["data"]["chipset_ids"] == ["547611"]
+
+    @pytest.mark.asyncio
+    async def test_project_mode_still_accepts_a_list(self):
+        """The single-id rule applies to device mode only."""
+        api = MagicMock()
+        api.get_metrics = AsyncMock(return_value={})
+        flow = make_flow(api=api)
+        flow._username = "vokupt"
+        flow._password = "pw"
+        flow._mode = "project"
+        flow._device_type = 2
+
+        result = await flow.async_step_chipset_ids({"chipset_ids": "547611,14756976"})
+
+        assert result["type"] == "create_entry"
+        assert result["data"]["chipset_ids"] == ["547611", "14756976"]
+
+    def test_error_key_is_translated(self):
+        assert "single_chipset_id_required" in _load_translation_section("error")
 
 
 class TestReconfigureAndReauth:
@@ -362,7 +453,9 @@ class TestReconfigureAndReauth:
             "device_type": 2,
             "project_id": "1072",
         }
-        flow = make_flow()
+        api = MagicMock()
+        api.test_connection = AsyncMock(return_value=True)
+        flow = make_flow(api=api)
         entry = make_entry(entry_data)
         flow.hass.config_entries.async_get_entry.return_value = entry
         # Emulate HomeAssistant.config_entries.async_update_entry
@@ -375,6 +468,81 @@ class TestReconfigureAndReauth:
         assert entry.data["mode"] == "project"
         assert entry.data["project_id"] == "1072"
         flow.hass.config_entries.async_reload.assert_awaited_once_with("entry-1")
+        # test_connection() closes the session, so the cached client is dropped
+        flow._close_api.assert_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("username", "password", "expected"),
+        [
+            ("", "pw", "username_required"),
+            ("   ", "pw", "username_required"),
+            ("user", "", "password_required"),
+            ("user", "   ", "password_required"),
+        ],
+    )
+    async def test_reconfigure_rejects_blank_credentials(self, username, password, expected):
+        """A blank field used to be written into the entry.
+
+        ``async_setup_entry`` then refused to load it (its required-key check),
+        so reconfiguring with an empty password silently broke a working
+        integration on the next reload.
+        """
+        entry = make_entry({"username": "old", "password": "old", "mode": "project"})
+        api = MagicMock()
+        api.test_connection = AsyncMock(return_value=True)
+        flow = make_flow(api=api)
+        flow.hass.config_entries.async_get_entry.return_value = entry
+        flow.hass.config_entries.async_update_entry = lambda e, **kw: setattr(e, "data", kw["data"])
+
+        result = await flow.async_step_reconfigure({"username": username, "password": password})
+
+        assert result["errors"]["base"] == expected
+        assert entry.data["username"] == "old"
+        assert entry.data["password"] == "old"
+        flow.hass.config_entries.async_reload.assert_not_awaited()
+        api.test_connection.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_reconfigure_rejects_credentials_the_api_refuses(self):
+        entry = make_entry({"username": "old", "password": "old", "mode": "project"})
+        api = MagicMock()
+        api.test_connection = AsyncMock(return_value=False)
+        flow = make_flow(api=api)
+        flow.hass.config_entries.async_get_entry.return_value = entry
+        flow.hass.config_entries.async_update_entry = lambda e, **kw: setattr(e, "data", kw["data"])
+
+        result = await flow.async_step_reconfigure({"username": "new", "password": "new"})
+
+        assert result["errors"]["base"] == "cannot_connect"
+        assert entry.data["password"] == "old"
+        flow.hass.config_entries.async_reload.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_reconfigure_reports_invalid_credentials(self):
+        entry = make_entry({"username": "old", "password": "old", "mode": "project"})
+        api = MagicMock()
+        api.test_connection = AsyncMock(side_effect=SmartSolarAuthenticationError("bad", 401))
+        flow = make_flow(api=api)
+        flow.hass.config_entries.async_get_entry.return_value = entry
+        flow.hass.config_entries.async_update_entry = lambda e, **kw: setattr(e, "data", kw["data"])
+
+        result = await flow.async_step_reconfigure({"username": "new", "password": "bad"})
+
+        assert result["errors"]["base"] == "invalid_credentials"
+        assert entry.data["password"] == "old"
+        flow.hass.config_entries.async_reload.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_reconfigure_shows_the_form_without_input(self):
+        entry = make_entry({"username": "old", "password": "old", "mode": "project"})
+        flow = make_flow()
+        flow.hass.config_entries.async_get_entry.return_value = entry
+
+        result = await flow.async_step_reconfigure(None)
+
+        assert result["type"] == "form"
+        assert result["step_id"] == "reconfigure"
 
     @pytest.mark.asyncio
     async def test_reconfigure_unknown_entry_aborts(self):
@@ -382,6 +550,45 @@ class TestReconfigureAndReauth:
         flow.hass.config_entries.async_get_entry.return_value = None
         result = await flow.async_step_reconfigure({"username": "u", "password": "p"})
         assert result["reason"] == "unknown_entry"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("username", "password", "expected"),
+        [
+            ("", "pw", "username_required"),
+            ("   ", "pw", "username_required"),
+            ("user", "", "password_required"),
+            ("user", "   ", "password_required"),
+        ],
+    )
+    async def test_reauth_rejects_blank_fields(self, username, password, expected):
+        """Blanks used to be sent to the API, which answered 'invalid_credentials'.
+
+        With the API down the same submission reported 'cannot_connect' instead,
+        hiding the real problem behind a connectivity error.
+        """
+        entry = make_entry({"username": "old", "password": "old", "mode": "project"})
+        flow = make_flow()
+        flow.hass.config_entries.async_get_entry.return_value = entry
+
+        with _FakeAPIContext(test_connection=AsyncMock(return_value=True)) as api:
+            result = await flow.async_step_reauth({"username": username, "password": password})
+
+        assert result["errors"]["base"] == expected
+        api.test_connection.assert_not_awaited()
+        flow.hass.config_entries.async_reload.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_reauth_still_accepts_valid_credentials(self):
+        entry = make_entry({"username": "old", "password": "old", "mode": "project"})
+        flow = make_flow()
+        flow.hass.config_entries.async_get_entry.return_value = entry
+        flow.hass.config_entries.async_update_entry = lambda e, **kw: setattr(e, "data", kw["data"])
+
+        with _FakeAPIContext(test_connection=AsyncMock(return_value=True)):
+            result = await flow.async_step_reauth({"username": " new ", "password": "pw"})
+
+        assert result["reason"] == "reauth_successful"
 
     @pytest.mark.asyncio
     async def test_reauth_unknown_entry_aborts(self):
@@ -420,11 +627,16 @@ class TestReconfigureAndReauth:
         flow.hass.config_entries.async_reload.assert_not_awaited()
 
 
-def _load_translation_section(section: str) -> dict[str, str]:
+def _load_translation_file(relative_path: str) -> dict:
+    """Load one translation file shipped inside the integration directory."""
     import json
 
-    with open("custom_components/smartsolar_ha/translations/en.json") as f:
-        return json.load(f)["config"][section]
+    with open(f"custom_components/smartsolar_ha/{relative_path}", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _load_translation_section(section: str) -> dict[str, str]:
+    return _load_translation_file("translations/en.json")["config"][section]
 
 
 class TestUniqueIdGeneration:
@@ -473,11 +685,11 @@ class TestUniqueIdGeneration:
         flow._mode = "device"
         flow._device_type = 2
 
-        result = await flow.async_step_chipset_ids({"chipset_ids": "547611, 14756976"})
+        result = await flow.async_step_chipset_ids({"chipset_ids": "547611"})
 
-        flow.async_set_unique_id.assert_awaited_once_with("vokupt_device_2_547611_14756976")
+        flow.async_set_unique_id.assert_awaited_once_with("vokupt_device_2_547611")
         assert result["type"] == "create_entry"
-        assert result["data"]["chipset_ids"] == ["547611", "14756976"]
+        assert result["data"]["chipset_ids"] == ["547611"]
         assert result["data"]["device_type"] == 2
 
     @pytest.mark.asyncio
@@ -558,3 +770,54 @@ class TestTranslationKeys:
 
         assert result["reason"] == "reauth_successful"
         assert "reauth_successful" in _load_translation_section("abort")
+
+    def test_unknown_entry_abort_key_resolves(self):
+        """``async_abort(reason="unknown_entry")`` needs a translation too.
+
+        Without one the UI shows the raw reason string. Both reauth and
+        reconfigure emit it when the entry disappeared mid-flow.
+        """
+        assert "unknown_entry" in _load_translation_section("abort")
+
+
+class TestCredentialStepTranslations:
+    """The reauth/reconfigure dialogs must be translated, in every language.
+
+    ``async_show_form(step_id="reauth")`` with no matching translation renders
+    the form with raw field keys and no title, which is what shipped before.
+    """
+
+    @pytest.mark.parametrize(
+        "relative_path",
+        ["strings.json", "translations/en.json", "translations/vi.json"],
+    )
+    @pytest.mark.parametrize("step_id", ["reauth", "reconfigure"])
+    def test_credential_step_is_translated(self, relative_path, step_id):
+        config = _load_translation_file(relative_path)["config"]
+
+        assert step_id in config["step"], f"{step_id} missing from {relative_path}"
+        step = config["step"][step_id]
+        assert step.get("title"), f"{step_id} has no title in {relative_path}"
+        assert set(step["data"]) == {"username", "password"}
+
+    @pytest.mark.parametrize(
+        "relative_path",
+        ["strings.json", "translations/en.json", "translations/vi.json"],
+    )
+    def test_unknown_entry_abort_is_translated(self, relative_path):
+        assert "unknown_entry" in _load_translation_file(relative_path)["config"]["abort"]
+
+    @pytest.mark.parametrize("relative_path", ["strings.json", "translations/en.json", "translations/vi.json"])
+    def test_every_step_the_flow_shows_is_declared(self, relative_path):
+        """Every ``step_id`` used by the flow has a section, so none renders raw."""
+        shown = {
+            "user",
+            "mode",
+            "chipset_ids",
+            "project_method",
+            "project_id",
+            "project_devices",
+            "reauth",
+            "reconfigure",
+        }
+        assert shown <= set(_load_translation_file(relative_path)["config"]["step"])

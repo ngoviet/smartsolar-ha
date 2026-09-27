@@ -21,6 +21,7 @@ from .const import (
     RETRY_MAX_ATTEMPTS,
     TOKEN_REFRESH_DAYS_BEFORE_EXPIRY,
 )
+from .helpers import device_logs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -289,8 +290,15 @@ class SmartSolarAPI:
 
     @staticmethod
     def _normalize_device_guids(data: dict[str, Any]) -> dict[str, Any]:
-        """Normalize deviceLogs[].deviceGuid to str for consistent matching."""
-        for device_log in data.get("deviceLogs", []) or []:
+        """Normalize deviceLogs[].deviceGuid to str for consistent matching.
+
+        ``deviceLogs`` is third-party JSON and has been observed absent, ``null``
+        and (defensively) a scalar. Iterating the raw field raised ``TypeError``
+        for the scalar case and failed the whole poll, so the shared
+        ``helpers.device_logs()`` guard is used here as well as in the
+        coordinator, the sensors and diagnostics.
+        """
+        for device_log in device_logs(data):
             if isinstance(device_log, dict) and device_log.get("deviceGuid") is not None:
                 device_log["deviceGuid"] = str(device_log["deviceGuid"])
         return data

@@ -529,3 +529,35 @@ class TestRetryableStatuses:
 
         assert response.status == 400
         assert session.requests == 1
+
+
+class TestNormalizeDeviceGuids:
+    """``deviceLogs`` is third-party JSON and may be anything at all.
+
+    Iterating the raw field raised ``TypeError`` for a scalar value, which takes
+    down the whole poll (``UpdateFailed``) instead of degrading to "no device
+    logs" — the exact failure mode ``helpers.device_logs()`` exists to prevent.
+    """
+
+    @pytest.mark.parametrize("device_logs_value", [None, 5, "oops", {}, True, 3.5])
+    def test_non_list_device_logs_does_not_raise(self, device_logs_value):
+        data = {"deviceLogs": device_logs_value}
+
+        assert SmartSolarAPI._normalize_device_guids(data) == {"deviceLogs": device_logs_value}
+
+    def test_missing_device_logs_is_tolerated(self):
+        assert SmartSolarAPI._normalize_device_guids({}) == {}
+
+    def test_guids_are_stringified(self):
+        data = {"deviceLogs": [{"deviceGuid": 547611}, {"deviceGuid": "14756976"}, {"deviceGuid": None}]}
+
+        result = SmartSolarAPI._normalize_device_guids(data)
+
+        assert [log["deviceGuid"] for log in result["deviceLogs"]] == ["547611", "14756976", None]
+
+    def test_non_mapping_entries_are_skipped(self):
+        data = {"deviceLogs": ["oops", 5, None, {"deviceGuid": 42}]}
+
+        result = SmartSolarAPI._normalize_device_guids(data)
+
+        assert result["deviceLogs"][-1]["deviceGuid"] == "42"

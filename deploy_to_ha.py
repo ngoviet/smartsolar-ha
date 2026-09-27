@@ -99,23 +99,61 @@ def run(ssh: paramiko.SSHClient, cmd: str) -> str:
     return out
 
 
-def archive_remote(ssh: paramiko.SSHClient) -> Path:
-    """Download the currently deployed integration as a tarball."""
+def archive_remote(ssh: paramiko.SSHClient) -> Path | None:
+    """Download the currently deployed integration as a tarball.
+
+    Returns the archive path, or None when there was nothing to archive (for
+    example a first-time install, where the remote folder does not exist yet).
+    The tar exit status used to be discarded, so a failed archive was reported
+    as "archived 0 bytes" and the deploy continued without a rollback point.
+    """
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     target = ARCHIVE_DIR / f"smartsolar_ha_{stamp}.tar.gz"
 
-    _stdin, stdout, _stderr = ssh.exec_command(f"sudo tar -C {REMOTE_ROOT} -czf - smartsolar_ha")
+    _stdin, stdout, stderr = ssh.exec_command(f"sudo tar -C {REMOTE_ROOT} -czf - smartsolar_ha")
     data = stdout.read()
-    stdout.channel.recv_exit_status()
+    status = stdout.channel.recv_exit_status()
+    if status != 0 or not data:
+        print(f"  WARNING: nothing archived (tar exit {status}); no rollback point for this deploy")
+        err = stderr.read().decode(errors="replace").strip()
+        if err:
+            print(f"  {err}")
+        return None
+
     target.write_bytes(data)
     print(f"  archived {len(data)} bytes -> {target.name}")
     return target
 
 
+def warn_if_legacy_folder_present(ssh: paramiko.SSHClient) -> None:
+    """Warn when the pre-2.0.0 ``smartsolar_mppt`` folder is still deployed.
+
+    v2.0.0 renamed the domain to ``smartsolar_ha``. Home Assistant resolves an
+    integration by folder name, so a leftover ``smartsolar_mppt`` folder is not
+    just dead weight: its stored config entry can no longer be loaded and logs
+    an error on every start.
+    """
+    legacy = f"{REMOTE_ROOT}/smartsolar_mppt"
+    _stdin, stdout, _stderr = ssh.exec_command(f"test -d {legacy} && echo yes || echo no")
+    present = stdout.read().decode(errors="replace").strip()
+    stdout.channel.recv_exit_status()
+    if present == "yes":
+        print(
+            f"  WARNING: legacy folder {legacy} still exists on the host.\n"
+            "           Delete it and remove the stale 'smartsolar_mppt' config entry\n"
+            "           in Home Assistant, or it will log an error on every restart."
+        )
+
+
+def _local_file_list() -> list[Path]:
+    """Return every file of the integration that should exist on the host."""
+    return sorted(p for p in SRC_DIR.rglob("*") if p.is_file() and "__pycache__" not in p.parts)
+
+
 def upload_tree(ssh: paramiko.SSHClient) -> int:
     """Upload every file, base64 encoded, via sudo tee."""
-    files = sorted(p for p in SRC_DIR.rglob("*") if p.is_file() and "__pycache__" not in p.parts)
+    files = _local_file_list()
     for local in files:
         rel = local.relative_to(SRC_DIR).as_posix()
         remote = f"{REMOTE_DIR}/{rel}"
@@ -130,6 +168,29 @@ def upload_tree(ssh: paramiko.SSHClient) -> int:
         run(ssh, f"sudo sh -c 'base64 -d {remote}.b64 > {remote} && rm {remote}.b64'")
         print(f"  ok {rel}")
     return len(files)
+
+
+def prune_remote(ssh: paramiko.SSHClient) -> int:
+    """Delete files on the host that no longer exist locally.
+
+    Uploading only ever adds files, so a module deleted or renamed in the repo
+    stayed on the host forever. That is not merely untidy: a leftover module
+    keeps being importable (and a leftover ``.py`` next to a renamed one
+    shadows nothing but still ships stale code into the running integration).
+    Only files inside this integration's own folder are considered, so nothing
+    outside ``custom_components/smartsolar_ha`` can be touched.
+    """
+    wanted = {p.relative_to(SRC_DIR).as_posix() for p in _local_file_list()}
+    listing = run(ssh, f"sudo find {REMOTE_DIR} -type f -printf '%P\\n' 2>/dev/null || true")
+    stale = [
+        rel
+        for rel in (line.strip() for line in listing.splitlines())
+        if rel and rel not in wanted and not rel.endswith(".pyc") and "__pycache__" not in rel.split("/")
+    ]
+    for rel in stale:
+        run(ssh, f"sudo rm -f {REMOTE_DIR}/{rel}")
+        print(f"  removed stale {rel}")
+    return len(stale)
 
 
 def restart_ha(ssh: paramiko.SSHClient, env: dict[str, str]) -> None:
@@ -152,7 +213,9 @@ def restart_ha(ssh: paramiko.SSHClient, env: dict[str, str]) -> None:
         time.sleep(5)
         try:
             request = urllib.request.Request(
-                f"http://{HA_HOST}:8123/api/config",
+                # HA_URL, not a hardcoded host: the deployment target is
+                # configurable (HA_HOST / HA_URL) and the wait used to ignore it.
+                f"{HA_URL}/api/config",
                 headers={"Authorization": f"Bearer {token}"},
             )
             with urllib.request.urlopen(request, timeout=10) as response:
@@ -183,18 +246,26 @@ def main() -> int:
     print(f"Connecting to {HA_USER}@{HA_HOST}...")
     ssh = ssh_connect(env)
     try:
+        print("Checking deployed state:")
+        warn_if_legacy_folder_present(ssh)
+
         print("Archiving deployed version:")
         archive_remote(ssh)
 
         print("Uploading:")
         count = upload_tree(ssh)
 
+        print("Removing files that no longer exist locally:")
+        stale = prune_remote(ssh)
+        if not stale:
+            print("  none")
+
         print("Restarting Home Assistant:")
         restart_ha(ssh, env)
     finally:
         ssh.close()
 
-    print(f"\nDeployed {count} files to {REMOTE_DIR}")
+    print(f"\nDeployed {count} files to {REMOTE_DIR} ({stale} stale file(s) removed)")
     return 0
 
 

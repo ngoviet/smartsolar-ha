@@ -12,7 +12,11 @@ repos:
       - id: detect-private-key
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.0
+    # Keep this rev at or above the `ruff` floor in pyproject.toml, and in step
+    # with the version CI installs. v0.4.0 could not even parse the repository's
+    # own config (`target-version = "py314"` is an unknown variant for it) and it
+    # predates PEP 758, so the hook failed with exit 2 on every commit.
+    rev: v0.16.9
     hooks:
       - id: ruff
         args: [--fix]

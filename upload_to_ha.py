@@ -8,7 +8,6 @@ import paramiko
 
 HA_HOST = os.environ.get("HA_HOST", "192.168.10.15")
 HA_USER = os.environ.get("HA_USER", "vokupt")
-HA_PASS = os.environ["HA_PASS"]
 SRC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "custom_components", "smartsolar_ha")
 DST_DIR = "/homeassistant/custom_components/smartsolar_ha"
 
@@ -44,10 +43,18 @@ def upload_file(ssh, local_path, remote_path):
 
 
 def main():
+    # Read the password at call time and report a missing one instead of dying
+    # with `KeyError: 'HA_PASS'` before printing anything useful. `deploy_to_ha.py`
+    # (and verify_live.py) already handle a missing credential this way.
+    ha_pass = os.environ.get("HA_PASS")
+    if not ha_pass:
+        print("HA_PASS is not set in the environment (this uploader does not read .env)")
+        return 2
+
     print(f"Connecting to {HA_HOST}...")
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    ssh.connect(HA_HOST, username=HA_USER, password=HA_PASS, timeout=10)
+    ssh.connect(HA_HOST, username=HA_USER, password=ha_pass, timeout=10)
     print("Connected!\n")
 
     # Ensure destination directory exists
@@ -82,7 +89,8 @@ def main():
 
     ssh.close()
     print(f"\nAll {len(files)} files uploaded!")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

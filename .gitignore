@@ -1,8 +1,3 @@
-# Python cache
-__pycache__/
-*.py[cod]
-*$py.class
-
 # Python
 __pycache__/
 *.py[cod]
@@ -50,6 +45,14 @@ logo2.png
 *.psd
 custom_components/smartsolar_ha/ICON_README.md
 CHANGELOG.md
+
+# ...but Home Assistant serves the integration's own brand images from
+# custom_components/<domain>/brand/ (see loader.Integration.has_branding), so the
+# `logo.png` rule above must not hide them. Manifest keys do NOT control this:
+# the folder's presence is what counts.
+!custom_components/smartsolar_ha/brand/icon.png
+!custom_components/smartsolar_ha/brand/icon@2x.png
+!custom_components/smartsolar_ha/brand/logo.png
 
 # Wiki files (local only, not uploaded to GitHub)
 wiki/

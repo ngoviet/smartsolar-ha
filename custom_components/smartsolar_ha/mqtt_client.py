@@ -44,6 +44,12 @@ HAS_AIOMQTT = aiomqtt is not None
 
 CallbackType = Callable[[str, dict[str, Any]], Coroutine[Any, Any, None]]
 
+# Fields that describe the message itself rather than a measurement. They must
+# never be turned into sensors. Hoisted out of the message handler: it used to
+# rebuild this set for every payload, and a busy broker delivers ~2 messages per
+# second per device.
+BOOKKEEPING_FIELDS = frozenset({"command", "deviceGuid", "espId", "timeStamp", "firmwareVersion", "messagesCounter"})
+
 
 class SmartSolarMQTTClient:
     """Async MQTT client for SmartSolar real-time device data.
@@ -136,9 +142,13 @@ class SmartSolarMQTTClient:
     async def stop(self) -> None:
         """Stop MQTT client gracefully."""
         self._running = False
-        # Clear the flag here as well as on the way out of the loop: diagnostics
-        # and the coordinator read `connected` immediately after stop().
+        # Clear the state here as well as on the way out of the loop:
+        # diagnostics and the coordinator read `connected` immediately after
+        # stop(), and a closed client must never be kept referenced. The loop's
+        # `finally` covers the cancel path, but stop() can also be called when
+        # no loop was ever started.
         self._connected = False
+        self._client = None
         if self._task and not self._task.done():
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -152,29 +162,51 @@ class SmartSolarMQTTClient:
 
     async def _message_loop(self) -> None:
         """Main MQTT message loop with automatic reconnection."""
-        while self._running:
-            try:
-                await self._connect_and_listen()
-            except asyncio.CancelledError:
-                break
-            except Exception as exc:
-                self._connected = False
-                if self._running:
+        try:
+            while self._running:
+                try:
+                    await self._connect_and_listen()
+                except asyncio.CancelledError:
+                    break
+                except Exception as exc:
+                    self._connected = False
+                    if not self._running:
+                        break
                     _LOGGER.warning(
                         "MQTT connection failed (%s), reconnecting in %ds...",
                         exc,
                         MQTT_RECONNECT_DELAY,
                     )
-                    await asyncio.sleep(MQTT_RECONNECT_DELAY)
-        # Reached on cancel or a clean end of the stream; the broker connection
-        # is gone either way, so never keep reporting it as connected.
-        self._connected = False
-        self._client = None
+                else:
+                    # The message stream ended without raising — the broker
+                    # closed the subscription cleanly. Sleeping here too is what
+                    # keeps that from becoming a tight reconnect loop that
+                    # hammers the broker as fast as it can accept connections.
+                    self._connected = False
+                    if not self._running:
+                        break
+                    _LOGGER.warning(
+                        "MQTT connection to %s closed, reconnecting in %ds...",
+                        MQTT_BROKER,
+                        MQTT_RECONNECT_DELAY,
+                    )
+                await asyncio.sleep(MQTT_RECONNECT_DELAY)
+        finally:
+            # Reached on cancel, on a clean end of the stream and on an
+            # unexpected error alike; the broker connection is gone in every
+            # case, so never keep reporting it as connected and never keep a
+            # dead client reference. Cancellation during the reconnect sleep
+            # used to skip this cleanup entirely.
+            self._connected = False
+            self._client = None
 
     async def _connect_and_listen(self) -> None:
         """Connect to broker, subscribe, and process messages."""
-        # ssl.create_default_context() is blocking — run in thread executor
-        tls_context = await asyncio.get_event_loop().run_in_executor(None, ssl.create_default_context)
+        # ssl.create_default_context() is blocking — run in thread executor.
+        # get_running_loop(), not get_event_loop(): this is a coroutine, and
+        # get_event_loop() is the legacy API that only happens to work inside a
+        # running loop.
+        tls_context = await asyncio.get_running_loop().run_in_executor(None, ssl.create_default_context)
 
         # Decode base64 password from API (handle non-base64 gracefully)
         mqtt_password: str | None = None
@@ -251,10 +283,7 @@ class SmartSolarMQTTClient:
         device_guid = topic_parts[-1]
 
         # Fields that describe the message itself rather than a measurement.
-        # They must never be turned into sensors.
-        bookkeeping_fields = frozenset(
-            {"command", "deviceGuid", "espId", "timeStamp", "firmwareVersion", "messagesCounter"}
-        )
+        # They must never be turned into sensors (see BOOKKEEPING_FIELDS).
 
         normalized: dict[str, Any] = {}
         data_streams = payload.get("dataStreams")
@@ -265,8 +294,17 @@ class SmartSolarMQTTClient:
                     continue
                 name = stream.get("name")
                 value = stream.get("value")
-                if name is not None and value is not None:
-                    normalized[name] = value
+                if value is None or not isinstance(name, str):
+                    # A non-string name is not a measurement key: it cannot be
+                    # matched against SENSOR_TYPES, and an unhashable one used to
+                    # raise inside the dict assignment.
+                    continue
+                # Apply MQTT_FIELD_MAPPING here too. Firmware has been seen
+                # publishing the legacy names (charging_power, yield_today,
+                # yield_total) INSIDE dataStreams, and those fields were stored
+                # under names no sensor reads — every value silently dropped.
+                # The mapping is a no-op for the normal REST-named streams.
+                normalized[MQTT_FIELD_MAPPING.get(name, name)] = value
 
             # Top-level fields NOT in dataStreams (e.g., signalQuality)
             if "signalQuality" in payload:
@@ -283,7 +321,7 @@ class SmartSolarMQTTClient:
             # non-list) dataStreams is treated as "not present" so the other
             # fields are not silently dropped.
             for key, value in payload.items():
-                if key in bookkeeping_fields or key == "dataStreams":
+                if key in BOOKKEEPING_FIELDS or key == "dataStreams":
                     continue
                 mapped_field: str = MQTT_FIELD_MAPPING.get(key) or key
                 normalized[mapped_field] = value

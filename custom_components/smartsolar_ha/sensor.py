@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import math
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
@@ -223,6 +222,21 @@ class SmartSolarSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
 
         self._attr_device_info = build_device_info(config_entry.entry_id, mode, project_id)
 
+    @property
+    def available(self) -> bool:
+        """Return whether this sensor has a source it can read right now.
+
+        ``CoordinatorEntity.available`` is just ``last_update_success``, so a
+        failed HTTP poll marked *every* entity unavailable — even though MQTT
+        kept merging live values into ``coordinator.data`` and ``native_value``
+        kept returning them. The reading was computed and then discarded by the
+        state machine (and by the recorder), which defeats the whole point of the
+        real-time path surviving a cloud outage.
+        """
+        if self.coordinator.last_update_success:
+            return True
+        return self.coordinator.has_live_mqtt_data(self._device_guid)
+
     def _get_value_from_data_streams(self, data_streams: list[dict[str, Any]] | None) -> float | str | None:
         """Get value from data streams based on sensor type - optimized version."""
         if not data_streams:
@@ -230,33 +244,43 @@ class SmartSolarSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
 
         return self._convert_stream_value(stream_dict(data_streams).get(self._sensor_type))
 
+    @staticmethod
+    def _status_text(value: Any) -> str:
+        """Render a status code as text, whatever the payload actually holds.
+
+        ``int()`` on a non-finite float is not merely "not a number": NaN raises
+        ``ValueError`` and Infinity raises ``OverflowError``. Neither is covered
+        by ``except (ValueError, TypeError)``, so a single malformed status
+        stream used to escape ``native_value`` and surface as an entity update
+        error instead of an "Unknown" state. ``coerce_float()`` rejects every
+        non-finite value first, which also makes the ``int()`` below total.
+        """
+        code = coerce_float(value)
+        if code is None:
+            return f"Unknown ({value})"
+        return STATUS_MAPPING.get(int(code), f"Unknown ({value})")
+
     def _convert_stream_value(self, value: Any) -> float | str | None:
         """Convert a raw stream value into the sensor's native value."""
         if value is None:
             return None
 
-        # Handle status mapping
+        # Status is a code that is rendered as text, never a measurement, so it
+        # must not be range-checked against the sensor's max_value.
         if self._sensor_type == "status":
-            try:
-                return STATUS_MAPPING.get(int(float(value)), f"Unknown ({value})")
-            except ValueError, TypeError:
-                return f"Unknown ({value})"
+            return self._status_text(value)
 
-        # Convert to float for numeric sensors
-        try:
-            num_value = float(value)
-        except ValueError, TypeError:
-            return None
-
-        # NaN slips through every ``>``/``<`` comparison below, so it has to be
-        # rejected explicitly: json.loads accepts the bare NaN/Infinity literals
-        # that appear in some MQTT payloads, and a NaN state poisons Home
-        # Assistant's long-term statistics for the sensor.
-        if not math.isfinite(num_value):
+        # ``coerce_float`` converts to float and rejects non-numeric values AND
+        # non-finite results. The finiteness check matters: json.loads accepts
+        # the bare NaN/Infinity literals that appear in some MQTT payloads, and
+        # NaN slips through every ``>``/``<`` comparison below, so a NaN state
+        # would poison Home Assistant's long-term statistics for this sensor.
+        num_value = coerce_float(value)
+        if num_value is None:
             _LOGGER.debug(
-                "Sensor %s value %r is not finite — treating as invalid",
+                "Sensor %s value %r is not a usable number — treating as invalid",
                 self._sensor_type,
-                num_value,
+                value,
             )
             return None
 
@@ -349,21 +373,25 @@ class SmartSolarProjectSynthesisSensor(SmartSolarSensor):
             for stream in synthesis_streams:
                 if not isinstance(stream, dict) or stream.get("name") != field_name:
                     continue
-                value = stream.get("value")
-                if value is None:
-                    break
-                try:
-                    num_value = float(value)
-                except ValueError, TypeError:
-                    break
-                return self._apply_status_mapping(num_value)
+                # Route the server value through exactly the same conversion the
+                # per-device path uses. Reading it directly published NaN and
+                # Infinity as entity states (poisoning long-term statistics)
+                # and skipped every per-sensor max_value ceiling, so a firmware
+                # overflow sentinel such as 2147483.647 W reached the state
+                # machine from `synthesisStreams` while the per-device path
+                # correctly dropped it.
+                value = self._convert_stream_value(stream.get("value"))
+                if value is not None:
+                    return value
+                # The server value is missing or unusable — aggregate locally.
+                break
 
         return self._calculate_from_device_logs()
 
     def _apply_status_mapping(self, num_value: float) -> float | str:
         """Map a status code to text; pass other numeric values through."""
         if self._sensor_type == "status":
-            return STATUS_MAPPING.get(int(num_value), f"Unknown ({num_value})")
+            return self._status_text(num_value)
         return num_value
 
     def _calculate_from_device_logs(self) -> float | str | None:

@@ -1,6 +1,6 @@
 # SmartSolar MPPT MQ — Toàn Bộ Kiến Thức API & Tích Hợp
 
-> **Trạng thái**: ✅ LIVE · **Phiên bản**: **v2.0.0** (2026-09-27) · **Nguồn sự thật**: [../STATUS.md](../STATUS.md) · **Cập nhật**: 2026-09-27
+> **Trạng thái**: ✅ LIVE · **Phiên bản**: **v2.0.1** (2026-09-27) · **Nguồn sự thật**: [../STATUS.md](../STATUS.md) · **Cập nhật**: 2026-09-27
 >
 > ⚠️ **v2.0.0 đổi domain `smartsolar_mppt` → `smartsolar_ha`** (thư mục, `manifest.domain`,
 > import, tên service, đường dẫn deploy). HA xác định integration theo **tên thư mục** phải
@@ -13,6 +13,21 @@
 >
 > ⚠️ Nội dung tổng hợp **2026-06-22**, đã bổ sung mục [7.4 — audit v1.5.1](#74-đã-fix-trong-v151-2026-09-27--audit-toàn-diện).
 > Đối chiếu lại entity thực tế nếu có sai lệch.
+>
+> 📌 **v2.0.1 (27 bug đã fix, test 366 → 551)** — bảng audit đầy đủ nằm ở
+> [`CLAUDE.md`](CLAUDE.md). Các thay đổi hành vi cần biết khi đọc tài liệu này:
+> - Poll REST lỗi **không còn** làm entity `unavailable` khi MQTT vẫn đang có dữ liệu
+>   sống; entity `Update Frequency` luôn available.
+> - **Device mode chỉ nhận 1 Chipset ID** (trước đây nhận nhiều rồi âm thầm bỏ qua, và dữ
+>   liệu của sạc thứ hai có thể hiện lên sensor của sạc thứ nhất).
+> - Tên field legacy (`charging_power`, `yield_today`, `yield_total`) trong `dataStreams`
+>   của MQTT **đã được map** như ở dạng flat.
+> - Giá trị `synthesisStreams` được kiểm tra như mọi giá trị khác (NaN/Infinity và trần
+>   `max_value` bị loại; fallback về tổng hợp theo từng thiết bị).
+> - `sensor.…_wifi_signal` của firmware cũ vẫn `unknown` là **đúng** (payload không có
+>   `signalQuality`).
+> - `allow_multiple_instances` **không phải** thuộc tính của HA (đã xoá); sensor **không**
+>   khôi phục giá trị cũ khi restart.
 
 > **Mục đích:** Tài liệu tham khảo đầy đủ để viết lại integration từ đầu hoặc nâng cấp lên GitHub.
 > **Ngày tổng hợp:** 2026-06-22

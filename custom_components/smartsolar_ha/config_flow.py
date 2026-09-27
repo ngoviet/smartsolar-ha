@@ -102,7 +102,6 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._chipset_ids: list[str] | None = None
         self._project_method: str | None = None
         self._project_id: str | None = None
-        self._device_types: list[int] | None = None
         self._api: SmartSolarAPI | None = None
         self._api_username: str | None = None
         self._api_password: str | None = None
@@ -275,7 +274,6 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if not errors and all_devices and device_types:
                 self._chipset_ids = all_devices
-                self._device_types = device_types
 
                 # Test the configuration
                 try:
@@ -304,7 +302,6 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             CONF_MODE: self._mode,
                             CONF_DEVICE_TYPE: device_types[0],  # Primary device type
                             CONF_CHIPSET_IDS: self._chipset_ids,
-                            "device_types": self._device_types,  # All device types
                             "update_interval": 5,
                         },
                     )
@@ -342,6 +339,16 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 if not chipset_ids:
                     errors["base"] = "chipset_ids_invalid"
+                elif self._mode == MODE_DEVICE and len(chipset_ids) > 1:
+                    # Device mode has entities for exactly ONE device: the
+                    # coordinator reads chipset_ids[0], the sensor prefix is
+                    # d_{chipset_ids[0]} and the daily statistics are keyed by it.
+                    # Extra IDs used to be accepted and then silently ignored —
+                    # worse, they still passed the MQTT "is this ours?" guard, and
+                    # device mode merges every accepted device into a single
+                    # lastMessage.dataStreams, so the second charger's readings
+                    # were published on the first charger's sensors.
+                    errors["base"] = "single_chipset_id_required"
                 else:
                     self._chipset_ids = chipset_ids
 
@@ -415,27 +422,40 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="unknown_entry")
 
         if user_input is not None:
-            try:
-                api = SmartSolarAPI(
-                    username=user_input[CONF_USERNAME],
-                    password=user_input[CONF_PASSWORD],
-                    hass=self.hass,
-                )
+            # Validate the fields first, exactly like async_step_user. Submitting
+            # blanks used to be sent to the API, which reported
+            # 'invalid_credentials' — or 'cannot_connect' when the API happened to
+            # be down, hiding the real problem.
+            username = user_input[CONF_USERNAME]
+            password = user_input[CONF_PASSWORD]
+            if not username or not username.strip():
+                errors["base"] = "username_required"
+            elif not password or not password.strip():
+                errors["base"] = "password_required"
+            else:
                 try:
-                    connected = await api.test_connection()
-                finally:
-                    await api.close()
+                    api = SmartSolarAPI(
+                        username=username,
+                        password=password,
+                        hass=self.hass,
+                    )
+                    try:
+                        connected = await api.test_connection()
+                    finally:
+                        await api.close()
 
-                if connected:
-                    self.hass.config_entries.async_update_entry(reauth_entry, data={**reauth_entry.data, **user_input})
-                    await self.hass.config_entries.async_reload(reauth_entry.entry_id)
-                    return self.async_abort(reason="reauth_successful")
-                errors["base"] = ERROR_CANNOT_CONNECT
-            except SmartSolarAPIError as err:
-                if err.status_code == 401:
-                    errors["base"] = ERROR_INVALID_CREDENTIALS
-                else:
+                    if connected:
+                        self.hass.config_entries.async_update_entry(
+                            reauth_entry, data={**reauth_entry.data, **user_input}
+                        )
+                        await self.hass.config_entries.async_reload(reauth_entry.entry_id)
+                        return self.async_abort(reason="reauth_successful")
                     errors["base"] = ERROR_CANNOT_CONNECT
+                except SmartSolarAPIError as err:
+                    if err.status_code == 401:
+                        errors["base"] = ERROR_INVALID_CREDENTIALS
+                    else:
+                        errors["base"] = ERROR_CANNOT_CONNECT
 
         return self.async_show_form(
             step_id="reauth",
@@ -450,14 +470,43 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle reconfigure flow (HA 2024.3+)."""
+        errors: dict[str, str] = {}
         reconfigure_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         if not reconfigure_entry:
             return self.async_abort(reason="unknown_entry")
         if user_input is not None:
-            merged_data = {**reconfigure_entry.data, **user_input}
-            self.hass.config_entries.async_update_entry(reconfigure_entry, data=merged_data)
-            await self.hass.config_entries.async_reload(reconfigure_entry.entry_id)
-            return self.async_abort(reason="reconfigure_successful")
+            username = user_input[CONF_USERNAME]
+            password = user_input[CONF_PASSWORD]
+
+            # Validate before writing. This step used to store whatever it was
+            # given and reload immediately, so a blank field made
+            # ``async_setup_entry`` refuse to load the entry (its required-key
+            # check) and a typo silently took a working integration down until
+            # someone noticed. Reauth already validated; reconfigure must too.
+            if not username or not username.strip():
+                errors["base"] = "username_required"
+            elif not password or not password.strip():
+                errors["base"] = "password_required"
+            else:
+                self._username = username
+                self._password = password
+                try:
+                    api = self._get_api()
+                    if await api.test_connection():
+                        merged_data = {**reconfigure_entry.data, **user_input}
+                        self.hass.config_entries.async_update_entry(reconfigure_entry, data=merged_data)
+                        await self.hass.config_entries.async_reload(reconfigure_entry.entry_id)
+                        return self.async_abort(reason="reconfigure_successful")
+                    errors["base"] = ERROR_CANNOT_CONNECT
+                except SmartSolarAPIError as err:
+                    if err.status_code == 401:
+                        errors["base"] = ERROR_INVALID_CREDENTIALS
+                    else:
+                        errors["base"] = ERROR_CANNOT_CONNECT
+                    _LOGGER.error("API error during reconfigure: %s", err)
+                finally:
+                    await self._close_api()
+
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=vol.Schema(
@@ -466,6 +515,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(CONF_PASSWORD, default=reconfigure_entry.data.get(CONF_PASSWORD, "")): str,
                 }
             ),
+            errors=errors,
         )
 
     async def _create_entry(self) -> ConfigFlowResult:

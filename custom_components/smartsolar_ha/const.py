@@ -13,7 +13,7 @@ DOMAIN = "smartsolar_ha"
 _LOGGER = logging.getLogger(__name__)
 
 # Integration release version — keep in sync with manifest.json / pyproject.toml
-VERSION = "2.0.0"
+VERSION = "2.0.1"
 
 # Child loggers so users can silence just the noisy parts:
 #   logger:
@@ -32,7 +32,7 @@ API_DEVICE_STATUS_ENDPOINT = f"{API_BASE_URL}/Device/Status"
 
 # Device Types
 DEVICE_TYPE_SUN_GTIL2 = 1  # Inverter Sun-GTIL2
-DEVICE_TYPE_MANH_QUAN = 2  # S?c MPPT M?nh Qu?n
+DEVICE_TYPE_MANH_QUAN = 2  # SmartSolar MPPT Mạnh Quân charger
 
 # MQTT Configuration
 MQTT_BROKER = "mqttx.smartsolar.io.vn"
@@ -64,7 +64,10 @@ MAX_UPDATE_INTERVAL = 30  # 30 seconds
 MQTT_NOTIFY_THROTTLE = 1.0  # seconds
 TOKEN_REFRESH_DAYS_BEFORE_EXPIRY = 7  # days
 RETRY_MAX_ATTEMPTS = 3
-RETRY_BACKOFF_FACTOR = 2  # Exponential backoff: 1s, 2s, 4s
+# Exponential backoff between attempts. With RETRY_MAX_ATTEMPTS = 3 there are
+# only two gaps, so the real waits are 1s then 2s — the comment here used to
+# claim "1s, 2s, 4s", which would need four attempts.
+RETRY_BACKOFF_FACTOR = 2
 
 # Sensor definitions
 
