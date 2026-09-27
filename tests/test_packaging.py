@@ -40,12 +40,14 @@ class TestManifest:
 
     def test_version_matches_const_and_pyproject(self):
         """A stale sw_version is how a live instance ended up running old code."""
+        import tomllib
+
         from custom_components.smartsolar_ha.const import VERSION
 
         assert MANIFEST["version"] == VERSION
 
-        pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
-        assert f'version = "{VERSION}"' in pyproject
+        pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+        assert pyproject["project"]["version"] == VERSION
 
     def test_no_branding_key(self):
         """``brand`` is NOT a Home Assistant manifest key.
@@ -119,26 +121,28 @@ class TestToolingFloors:
 
     def test_pre_commit_ruff_rev_is_not_older_than_the_floor(self):
         """A pre-commit rev below the floor re-breaks the hooks."""
-        import re
+        import yaml
 
         floor = _requirement_floor(self._pyproject()["project"]["optional-dependencies"]["dev"], "ruff")
-        config = Path(".pre-commit-config.yaml").read_text(encoding="utf-8")
-        section = config.split("ruff-pre-commit", 1)[1]
-        match = re.search(r"rev:\s*v?(\d+)\.(\d+)\.(\d+)", section)
+        config = yaml.safe_load(Path(".pre-commit-config.yaml").read_text(encoding="utf-8"))
+        ruff_repos = [repo for repo in config["repos"] if "ruff-pre-commit" in repo["repo"]]
 
-        assert match is not None, "ruff-pre-commit has no pinned rev"
-        assert tuple(int(part) for part in match.groups()) >= floor
+        assert len(ruff_repos) == 1, "ruff-pre-commit is not declared exactly once"
+        rev = ruff_repos[0]["rev"].removeprefix("v")
+        assert tuple(int(part) for part in rev.split(".")) >= floor
 
     def test_ci_installs_the_same_spec_as_the_docs(self):
         """The floors live in pyproject.toml only, not repeated in the workflow."""
-        workflow = (Path(".github") / "workflows" / "ci.yml").read_text(encoding="utf-8")
-        install_lines = [
-            line.strip()
-            for line in workflow.splitlines()
-            if line.strip().startswith(("pip install", "python -m pip install"))
+        import yaml
+
+        workflow = yaml.safe_load((Path(".github") / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+        install_scripts = [
+            step["run"]
+            for step in workflow["jobs"]["lint"]["steps"]
+            if isinstance(step.get("run"), str) and "pip install" in step["run"]
         ]
 
-        assert install_lines, "ci.yml no longer installs anything"
-        assert any(".[test,dev]" in line for line in install_lines)
-        # No tool floors re-declared here (comments are not install lines).
-        assert not any("ruff>=" in line or "mypy>=" in line for line in install_lines)
+        assert install_scripts, "ci.yml lint job no longer installs anything"
+        assert any(".[test,dev]" in script for script in install_scripts)
+        # No tool floors re-declared here (comments are not part of the run script).
+        assert not any("ruff>=" in script or "mypy>=" in script for script in install_scripts)
