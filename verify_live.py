@@ -104,20 +104,30 @@ def main() -> int:
     #    messages use the older updateDeviceLog format without the field, so for
     #    that device 'unknown' is the correct, honest answer.
     reported = live_signal_quality(env)
-    for device, guid in (("pv1", "547611"), ("pv2", "14756976")):
-        entity = f"{prefix}{device}_wifi_signal"
-        state = states.get(entity)
-        if guid not in reported:
-            check(
-                state is not None and state["state"] == "unknown",
-                f"{entity} = {state['state'] if state else 'MISSING'} "
-                f"(API reports no signalQuality for {guid}, so 'unknown' is correct)",
-            )
-        else:
-            check(
-                state is not None and state["state"] not in ("unavailable", "unknown"),
-                f"{entity} = {state['state'] if state else 'MISSING'} (API reports {reported[guid]} for {guid})",
-            )
+    if not reported:
+        # Without the cloud map there is no way to tell an honest 'unknown' (the
+        # device reports no signal) from an invented value. Asserting 'unknown'
+        # for every device then fails on any device whose payload does carry a
+        # signal — say the check was skipped instead of reporting a false FAIL.
+        notes.append(
+            "SKIP  per-device WiFi signal check — cloud signal map unavailable "
+            "(set SMARTSOLAR_USER / SMARTSOLAR_PASS in .env to enable it)"
+        )
+    else:
+        for device, guid in (("pv1", "547611"), ("pv2", "14756976")):
+            entity = f"{prefix}{device}_wifi_signal"
+            state = states.get(entity)
+            if guid not in reported:
+                check(
+                    state is not None and state["state"] == "unknown",
+                    f"{entity} = {state['state'] if state else 'MISSING'} "
+                    f"(API reports no signalQuality for {guid}, so 'unknown' is correct)",
+                )
+            else:
+                check(
+                    state is not None and state["state"] not in ("unavailable", "unknown"),
+                    f"{entity} = {state['state'] if state else 'MISSING'} (API reports {reported[guid]} for {guid})",
+                )
 
     # 3. Battery voltage must be ~24 V, never the sum of both chargers (~53 V).
     total_bat = states.get(f"{prefix}total_battery_voltage")
