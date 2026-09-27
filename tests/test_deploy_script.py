@@ -85,12 +85,19 @@ class TestLocalGateMatchesCi:
 
     @pytest.mark.parametrize("subcommand", ["check", "format --check"])
     def test_ci_runs_the_same_sources(self, subcommand):
-        workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-        expected = f"run: ruff {subcommand} "
-        line = next((line for line in workflow.splitlines() if line.strip().startswith(expected)), None)
+        import shlex
 
-        assert line is not None, f"ci.yml no longer runs 'ruff {subcommand}'"
-        assert line.strip().removeprefix("run:").split() == ["ruff", *subcommand.split(), *deploy_to_ha.SOURCES]
+        import yaml
+
+        workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+        runs = [
+            step["run"]
+            for step in workflow["jobs"]["lint"]["steps"]
+            if isinstance(step.get("run"), str) and f"ruff {subcommand}" in step["run"]
+        ]
+
+        assert runs, f"ci.yml no longer runs 'ruff {subcommand}'"
+        assert shlex.split(runs[0]) == ["ruff", *subcommand.split(), *deploy_to_ha.SOURCES]
 
 
 class TestPruneRemote:
