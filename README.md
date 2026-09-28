@@ -203,15 +203,11 @@ No configuration change: this release only fixes behaviour, so an existing
 
 > ⚠️ **Breaking change: the integration domain is now `smartsolar_ha`.**
 > Home Assistant identifies an integration by its folder name, which must equal
-> the `domain` in `manifest.json`, so this cannot be a drop-in update:
->
-> 1. Delete the old `custom_components/smartsolar_mppt/` folder (and the old
->    config entry in **Settings → Devices & Services**, if it is still listed).
-> 2. Install/update to v2.0.0 and add the integration again with your
->    SmartSolar account credentials.
->
-> Entity names are unchanged, so existing entity IDs, dashboards and long-term
-> statistics keep working; only the config entry itself has to be re-added.
+> the `domain` in `manifest.json`, so this cannot be a drop-in update: an
+> existing v1.x entry stops loading. To keep your entity IDs, dashboards and
+> long-term statistics, migrate the stored entry in place — deleting and
+> re-adding creates `_2`-suffixed entity IDs and orphans statistics — see the
+> migration procedure in CLAUDE.md.
 
 **Correctness fixes:**
 - **A `"deviceLogs": null` response no longer kills the poll.** A `len()` call in a
