@@ -22,8 +22,8 @@
 > 📌 **v2.0.2 (2026-09-28)** — chỉ đổi metadata, **không đổi code**: repository GitHub
 > đổi tên `smartsolar-ha` → `smartsolar_ha` (slug repo nay khớp domain), mọi link/badge và
 > `documentation`/`issue_tracker` trong manifest trỏ URL mới; badge test trong README
-> chuyển sang badge động của CI thay vì số cứng (số cứng luôn sai ở một môi trường: local
-> `553 passed, 1 skipped`, CI `552 passed, 2 skipped` vì CI không cài extra `deploy`).
+> chuyển sang badge động của CI thay vì số cứng (số cứng đã lệch hai lần: ghi 366 khi
+> cây có 551, rồi ghi 555 khi cây có 553; suite hiện tại: `553 passed, 1 skipped`).
 > Domain, tên entity, `unique_id`, service và config entry **không đổi** — không cần thêm lại.
 >
 > 📌 **v2.0.1 (27 bug đã fix, test 366 → 551 lúc audit; cây hiện tại 553)** — bảng audit đầy đủ nằm ở

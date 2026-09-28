@@ -182,12 +182,11 @@ named the old repository.
   name is still unrelated to the domain — HA resolves an integration from
   `custom_components/<domain>/`, never from GitHub.
 - The README test badge is now the **CI workflow badge** rather than a
-  hard-coded `N passed` shield. The static figure went stale the moment the
-  suite changed (it read 366 while the tree had 551, then 555 while the tree had
-  553) and no single number can be right for both environments: locally
-  `553 passed, 1 skipped`, while CI installs `[test]` only, so it also skips the
-  `paramiko` import test → `552 passed, 2 skipped`. A count that changes with the
-  environment does not belong in a badge.
+  hard-coded `N passed` shield. The static figure had gone stale twice — it read
+  366 while the tree had 551, then 555 while the tree had 553 — so the badge now
+  reports the CI run itself instead of a number that has to be remembered. The
+  suite reports **553 passed, 1 skipped**, and the CI Tests job reports the same
+  totals (verified in the run log for the merged commit).
 - Carried over from the deploy-extra review pass (already on `main`): the
   `deploy` extra is pinned precisely and covered by a behavioural import test
   instead of source parsing.
