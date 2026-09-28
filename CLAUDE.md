@@ -324,12 +324,18 @@ attributes; logger names moved to `const.py` so noisy sub-loggers can be silence
 
 ```bash
 py -3.14 -m venv .venv                       # Home Assistant 2026.x needs Python >= 3.14.2
-.venv/Scripts/python -m pip install -e ".[test,dev]"
+.venv/Scripts/python -m pip install -e ".[test,dev,deploy]"
 .venv/Scripts/python -m pytest tests/ --cov=custom_components/
 .venv/Scripts/ruff check custom_components/ tests/ upload_to_ha.py deploy_to_ha.py verify_live.py
 .venv/Scripts/ruff format --check custom_components/ tests/ upload_to_ha.py deploy_to_ha.py verify_live.py
 .venv/Scripts/python -m mypy custom_components/
 ```
+
+> The `deploy` extra (`paramiko`) is only needed by the SSH scripts. It is a
+> separate extra because CI and the test suite never touch it — but a *fresh*
+> venv installed with only `.[test,dev]` makes `python deploy_to_ha.py` die with
+> `ModuleNotFoundError: No module named 'paramiko'`, which is how that was found.
+> `tests/test_packaging.py` asserts the extra is declared.
 
 > The ruff file list is duplicated in `deploy_to_ha.py:SOURCES` and
 > `.github/workflows/ci.yml`; keep the three in sync (the local gate used to be
@@ -376,14 +382,46 @@ cd d:/code/smartsolar_ha
 .venv/Scripts/python verify_live.py                # assert the live entities are right
 ```
 
-> ⚠️ Before deploying v2.0.0+ to a live instance, copy the old
-> `custom_components/smartsolar_mppt/` off the HA host (or let `deploy_to_ha.py`
-> archive it) and delete the stale config entry — the folder rename means HA can
-> no longer load entries that belong to `smartsolar_mppt`. `deploy_to_ha.py`
-> now detects a leftover `smartsolar_mppt/` folder on the host and warns about
-> it, and `clear_entities.ps1` removes both domains' entities/devices from the
-> registries (run it with HA **stopped** — it refuses otherwise, because HA
-> rewrites `.storage` on shutdown and would discard the edit).
+> ⚠️ **Changing the domain breaks the deployed config entry.** Home Assistant
+> resolves an entry by its `domain`, so an entry stored for `smartsolar_mppt`
+> cannot load once the integration is `smartsolar_ha` — it logs
+> `Integration 'smartsolar_mppt' not found` and every entity goes away.
+> `deploy_to_ha.py` detects a leftover `smartsolar_mppt/` folder and warns about
+> it, but it does **not** migrate the entry.
+
+> ✅ **Migrate the entry instead of re-adding it** (validated live on 2026-09-28
+> for `smartsolar_mppt` → `smartsolar_ha`, 37 entities, no entity_id or
+> statistics loss):
+>
+> 1. With HA **running**, back up `.storage` on the host:
+>    `sudo cp /homeassistant/.storage/core.{config_entries,entity_registry,device_registry} /somewhere/`
+>    and tar the currently deployed integration folder.
+> 2. `sudo docker stop homeassistant` — HA rewrites `.storage` on shutdown, so
+>    editing while it runs is silently discarded.
+> 3. In `.storage`, rewrite the domain in three places, then write the files back
+>    as **UTF-8 without BOM**:
+>    * `core.config_entries` → the entry's `"domain"`
+>    * `core.entity_registry` → every entity's `"platform"` (one per sensor)
+>    * `core.device_registry` → the device's `"identifiers"` pair
+> 4. Upload the new tree, delete the old `custom_components/<old_domain>/`, then
+>    `sudo docker start homeassistant`.
+>
+> Because the **entry_id is unchanged**, every entity's unique_id is unchanged
+> too, so HA re-binds the same registry rows and the same entity_ids — dashboards
+> and long-term statistics keep working and no credential is re-entered. Deleting
+> the entry and re-adding it instead produces a new entry_id, hence new
+> unique_ids, hence `_2`-suffixed entity_ids and orphaned statistics.
+>
+> Notes from doing it for real: HAOS's supervisor can restart the container on
+> its own after a `docker stop`, so confirm the folder/`.storage` state and do a
+> final clean restart before trusting the result; and `configuration.yaml`'s
+> `logger.logs` still named the old domain, which silently hid the new
+> integration's INFO lines until it was updated (this can be applied without a
+> restart via the `logger.set_level` service).
+
+> `clear_entities.ps1` is the opposite tool (it *deletes* both domains' entities
+> and devices from the registries, for a clean re-add); run it only with HA
+> **stopped**, since it refuses to run while HA answers on its API.
 
 > `verify_live.py` needs `SMARTSOLAR_USER` / `SMARTSOLAR_PASS` in `.env` for the
 > per-device WiFi check: it asks the cloud which devices report a `signalQuality`,

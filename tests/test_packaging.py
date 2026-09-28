@@ -146,3 +146,69 @@ class TestToolingFloors:
         assert any(".[test,dev]" in script for script in install_scripts)
         # No tool floors re-declared here (comments are not part of the run script).
         assert not any("ruff>=" in script or "mypy>=" in script for script in install_scripts)
+
+
+DEPLOY_SCRIPTS = ("deploy_to_ha.py", "upload_to_ha.py", "verify_live.py")
+
+
+class TestScriptDependencies:
+    """Every third-party module the helper scripts import must be installable.
+
+    The scripts are documented as `python deploy_to_ha.py`, but `paramiko` was
+    listed in no dependency set, so that command died with
+    ``ModuleNotFoundError: No module named 'paramiko'`` on a fresh
+    `pip install -e ".[test,dev]"`. This compares the *actual* imports of those
+    scripts against the distributions pyproject declares, so the next such gap is
+    caught without hard-coding a package name.
+    """
+
+    @staticmethod
+    def _declared_distributions() -> set[str]:
+        import tomllib
+
+        project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]
+        requirements = list(project["dependencies"])
+        for extra in project["optional-dependencies"].values():
+            requirements.extend(extra)
+
+        names = set()
+        for requirement in requirements:
+            # "aiohttp>=3.8.0" / "homeassistant==2026.9.2" / "pytest-cov>=5.0"
+            for separator in ("<", ">", "=", "!", "~", "[", ";", " "):
+                requirement = requirement.split(separator, 1)[0]
+            names.add(requirement.strip().lower().replace("_", "-"))
+        return names
+
+    @staticmethod
+    def _imported_top_level_modules(script: str) -> set[str]:
+        import ast
+
+        tree = ast.parse(Path(script).read_text(encoding="utf-8"))
+        modules: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                modules.add(node.module.split(".")[0])
+        return modules
+
+    @pytest.mark.parametrize("script", DEPLOY_SCRIPTS)
+    def test_script_imports_are_declared(self, script):
+        import sys
+
+        declared = self._declared_distributions()
+        third_party = {
+            module
+            for module in self._imported_top_level_modules(script)
+            if module not in sys.stdlib_module_names and module != "custom_components"
+        }
+
+        undeclared = {module for module in third_party if module.lower().replace("_", "-") not in declared}
+        assert not undeclared, (
+            f"{script} imports {sorted(undeclared)}, which no dependency or extra in pyproject.toml declares"
+        )
+
+    def test_deploy_extra_declares_paramiko(self):
+        """The SSH scripts need paramiko, so an installable extra must carry it."""
+        declared = self._declared_distributions()
+        assert "paramiko" in declared
