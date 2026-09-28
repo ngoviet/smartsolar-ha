@@ -1,6 +1,6 @@
 # SmartSolar MPPT MQ — Toàn Bộ Kiến Thức API & Tích Hợp
 
-> **Trạng thái**: ✅ LIVE · **Phiên bản**: **v2.0.1** (2026-09-27) · **Nguồn sự thật**: [../STATUS.md](../STATUS.md) · **Cập nhật**: 2026-09-27
+> **Trạng thái**: ✅ LIVE · **Phiên bản**: **v2.0.2** (2026-09-28) · **Nguồn sự thật**: [../STATUS.md](../STATUS.md) · **Cập nhật**: 2026-09-28
 >
 > ⚠️ **v2.0.0 đổi domain `smartsolar_mppt` → `smartsolar_ha`** (thư mục, `manifest.domain`,
 > import, tên service, đường dẫn deploy). HA xác định integration theo **tên thư mục** phải
@@ -19,7 +19,14 @@
 > ⚠️ Nội dung tổng hợp **2026-06-22**, đã bổ sung mục [7.4 — audit v1.5.1](#74-đã-fix-trong-v151-2026-09-27--audit-toàn-diện).
 > Đối chiếu lại entity thực tế nếu có sai lệch.
 >
-> 📌 **v2.0.1 (27 bug đã fix, test 366 → 551)** — bảng audit đầy đủ nằm ở
+> 📌 **v2.0.2 (2026-09-28)** — chỉ đổi metadata, **không đổi code**: repository GitHub
+> đổi tên `smartsolar-ha` → `smartsolar_ha` (slug repo nay khớp domain), mọi link/badge và
+> `documentation`/`issue_tracker` trong manifest trỏ URL mới; badge test trong README
+> chuyển sang badge động của CI thay vì số cứng (số cứng luôn sai ở một môi trường: local
+> `553 passed, 1 skipped`, CI `552 passed, 2 skipped` vì CI không cài extra `deploy`).
+> Domain, tên entity, `unique_id`, service và config entry **không đổi** — không cần thêm lại.
+>
+> 📌 **v2.0.1 (27 bug đã fix, test 366 → 551 lúc audit; cây hiện tại 553)** — bảng audit đầy đủ nằm ở
 > [`CLAUDE.md`](CLAUDE.md). Các thay đổi hành vi cần biết khi đọc tài liệu này:
 > - Poll REST lỗi **không còn** làm entity `unavailable` khi MQTT vẫn đang có dữ liệu
 >   sống; entity `Update Frequency` luôn available.
