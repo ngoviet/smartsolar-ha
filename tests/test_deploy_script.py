@@ -9,6 +9,7 @@ not actually installed.
 
 from __future__ import annotations
 
+import json
 import sys
 import types
 import urllib.request
@@ -42,6 +43,24 @@ class _FakeStream:
 
     def read(self) -> bytes:
         return self._data
+
+
+class _JsonResponse:
+    """``urllib.request.urlopen`` result carrying a JSON body."""
+
+    status = 200
+
+    def __init__(self, payload: object) -> None:
+        self._body = json.dumps(payload).encode()
+
+    def read(self) -> bytes:
+        return self._body
+
+    def __enter__(self) -> _JsonResponse:
+        return self
+
+    def __exit__(self, *_exc: object) -> bool:
+        return False
 
 
 class FakeSSH:
@@ -189,27 +208,20 @@ class TestRestartWaitsOnConfiguredUrl:
         monkeypatch.setattr(deploy_to_ha.time, "sleep", lambda _seconds: None)
         seen: list[str] = []
 
-        class _Response:
-            status = 200
-
-            def read(self) -> bytes:
-                return b'{"version": "2026.9.3"}'
-
-            def __enter__(self) -> _Response:
-                return self
-
-            def __exit__(self, *_exc: object) -> bool:
-                return False
-
         def fake_urlopen(request, timeout=None):  # noqa: ARG001
             seen.append(request.full_url)
-            return _Response()
+            if request.full_url.endswith("/api/config"):
+                return _JsonResponse({"version": "2026.9.4"})
+            return _JsonResponse([{"domain": "smartsolar_ha", "state": "loaded"}])
 
         monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
 
         deploy_to_ha.restart_ha(FakeSSH(), {"HA_TOKEN": "token"})
 
-        assert seen == ["http://ha.example:9999/api/config"]
+        assert seen == [
+            "http://ha.example:9999/api/config",
+            "http://ha.example:9999/api/config/config_entries/entry",
+        ]
 
     def test_skips_the_wait_without_a_token(self, monkeypatch):
         monkeypatch.setattr(deploy_to_ha, "HA_URL", "http://ha.example:9999")
@@ -220,6 +232,91 @@ class TestRestartWaitsOnConfiguredUrl:
         monkeypatch.setattr(urllib.request, "urlopen", explode)
 
         deploy_to_ha.restart_ha(FakeSSH(), {})  # must not raise
+
+
+class TestRestartWaitsForTheIntegrationToLoad:
+    """The API answers before the platforms are added.
+
+    A verification run chained right after a restart therefore saw zero
+    entities: the deploy reported success while the integration was still
+    loading. The wait now also requires this domain's entry to be ``loaded``.
+    """
+
+    @staticmethod
+    def _serve(monkeypatch, entry_payloads):
+        """Answer /api/config with a version and the entry listing in sequence."""
+        calls: list[str] = []
+        remaining = list(entry_payloads)
+
+        def fake_urlopen(request, timeout=None):  # noqa: ARG001
+            calls.append(request.full_url)
+            if request.full_url.endswith("/api/config"):
+                return _JsonResponse({"version": "2026.9.4"})
+            return _JsonResponse(remaining.pop(0) if remaining else None)
+
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(deploy_to_ha, "HA_URL", "http://ha.example:9999")
+        monkeypatch.setattr(deploy_to_ha.time, "sleep", lambda _seconds: None)
+        return calls
+
+    def test_returns_immediately_once_the_entry_is_loaded(self, monkeypatch, capsys):
+        calls = self._serve(monkeypatch, [[{"domain": "smartsolar_ha", "state": "loaded"}]])
+
+        deploy_to_ha.restart_ha(FakeSSH(), {"HA_TOKEN": "token"})
+
+        assert len(calls) == 2, "a loaded entry must not be polled again"
+        assert "smartsolar_ha is loaded" in capsys.readouterr().out
+
+    def test_keeps_waiting_while_the_entry_is_retrying(self, monkeypatch):
+        calls = self._serve(
+            monkeypatch,
+            [
+                [{"domain": "smartsolar_ha", "state": "setup_retry"}],
+                [{"domain": "smartsolar_ha", "state": "not_loaded"}],
+                [{"domain": "smartsolar_ha", "state": "loaded"}],
+            ],
+        )
+
+        deploy_to_ha.restart_ha(FakeSSH(), {"HA_TOKEN": "token"})
+
+        # 1 version probe + 3 entry probes.
+        assert len(calls) == 4
+
+    def test_another_domains_loaded_entry_does_not_satisfy_the_wait(self, monkeypatch):
+        calls = self._serve(
+            monkeypatch,
+            [
+                [{"domain": "other_integration", "state": "loaded"}],
+                [{"domain": "smartsolar_ha", "state": "loaded"}],
+            ],
+        )
+
+        deploy_to_ha.restart_ha(FakeSSH(), {"HA_TOKEN": "token"})
+
+        assert len(calls) == 3
+
+    def test_reports_an_entry_that_never_loads(self, monkeypatch):
+        monkeypatch.setattr(deploy_to_ha, "HA_READY_ATTEMPTS", 3)
+        self._serve(monkeypatch, [[{"domain": "smartsolar_ha", "state": "setup_error"}]] * 5)
+
+        with pytest.raises(RuntimeError, match="setup_error"):
+            deploy_to_ha.restart_ha(FakeSSH(), {"HA_TOKEN": "token"})
+
+    def test_reports_a_missing_entry_instead_of_waiting_for_it(self, monkeypatch, capsys):
+        calls = self._serve(monkeypatch, [[]])
+
+        deploy_to_ha.restart_ha(FakeSSH(), {"HA_TOKEN": "token"})
+
+        assert len(calls) == 1 + deploy_to_ha.HA_MISSING_ENTRY_ATTEMPTS
+        assert "no smartsolar_ha config entry found" in capsys.readouterr().out
+
+    def test_tolerates_a_malformed_entry_listing(self, monkeypatch, capsys):
+        calls = self._serve(monkeypatch, [{"unexpected": "mapping"}])
+
+        deploy_to_ha.restart_ha(FakeSSH(), {"HA_TOKEN": "token"})
+
+        assert len(calls) == 1 + deploy_to_ha.HA_MISSING_ENTRY_ATTEMPTS
+        assert "no smartsolar_ha config entry found" in capsys.readouterr().out
 
 
 class TestUploadScript:

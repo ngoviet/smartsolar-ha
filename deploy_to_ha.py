@@ -5,7 +5,8 @@ Pipeline:
   2. archive the currently deployed files               (rollback safety)
   3. upload every file from custom_components/smartsolar_ha/
   4. drop __pycache__ inside the container
-  5. restart Home Assistant and wait for the API to answer
+  5. restart Home Assistant, then wait for the API *and* for this integration's
+     config entry to reach "loaded"
 
 Usage:
     python deploy_to_ha.py            # full pipeline
@@ -31,6 +32,21 @@ REMOTE_ROOT = "/homeassistant/custom_components"
 REMOTE_DIR = f"{REMOTE_ROOT}/smartsolar_ha"
 ARCHIVE_DIR = PROJECT_ROOT / "_local_archive" / "deployed"
 VENV_PYTHON = PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
+
+# Home Assistant resolves an integration from its folder name, so the folder is
+# the domain: one source of truth for the readiness check below.
+INTEGRATION_DOMAIN = SRC_DIR.name
+
+# Home Assistant answers on the REST API before its integration platforms are
+# added, so "the API replied" does not mean "the deployment is live". Both waits
+# poll every 5 s, with the same 300 s ceiling the restart already had.
+HA_READY_INTERVAL = 5
+HA_READY_ATTEMPTS = 60
+
+# A config entry is listed nearly as soon as the API answers. If this domain's
+# entry is still missing after this many polls there is no entry for it at all
+# (a fresh install, or a domain rename), which is reported instead of waited on.
+HA_MISSING_ENTRY_ATTEMPTS = 3
 
 HA_HOST = os.environ.get("HA_HOST", "192.168.10.15")
 HA_USER = os.environ.get("HA_USER", "vokupt")
@@ -193,8 +209,86 @@ def prune_remote(ssh: paramiko.SSHClient) -> int:
     return len(stale)
 
 
+def _fetch_json(url: str, token: str) -> object:
+    """GET a JSON document from the Home Assistant REST API."""
+    import json
+    import urllib.request
+
+    request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(request, timeout=10) as response:
+        if response.status != 200:
+            return None
+        return json.loads(response.read())
+
+
+def _entry_state(payload: object) -> str | None:
+    """Return this integration's config-entry state from the REST listing.
+
+    Home Assistant keeps listing an entry it failed to load (``setup_retry`` /
+    ``setup_error``), so an entry that is *absent* means no entry exists for this
+    domain at all — not that it is still starting.
+    """
+    if not isinstance(payload, list):
+        return None
+    for entry in payload:
+        if isinstance(entry, dict) and entry.get("domain") == INTEGRATION_DOMAIN:
+            state = entry.get("state")
+            return state if isinstance(state, str) else None
+    return None
+
+
+def _wait_for_api(token: str) -> None:
+    """Wait until the REST API answers, then report the version it runs."""
+    import json
+    import urllib.error
+
+    for _attempt in range(HA_READY_ATTEMPTS):
+        time.sleep(HA_READY_INTERVAL)
+        try:
+            info = _fetch_json(f"{HA_URL}/api/config", token)
+        except urllib.error.URLError, TimeoutError, ConnectionError, OSError, json.JSONDecodeError:
+            continue
+        if isinstance(info, dict):
+            print(f"  HA is back: {info.get('version')}")
+            return
+    raise RuntimeError(f"HA did not come back within {HA_READY_ATTEMPTS * HA_READY_INTERVAL}s")
+
+
+def _wait_for_integration(token: str) -> None:
+    """Wait until this integration's config entry reports ``loaded``.
+
+    The REST API answers while the integration platforms are still being added,
+    so "the API replied" is not "the deployment is live": a verification run
+    chained right after the restart used to find zero entities. An entry that
+    never appears is reported instead of waited on — that is a fresh install or
+    a renamed domain, where there is nothing to verify yet.
+    """
+    import json
+    import urllib.error
+
+    state: str | None = None
+    missing = 0
+    for _attempt in range(HA_READY_ATTEMPTS):
+        try:
+            state = _entry_state(_fetch_json(f"{HA_URL}/api/config/config_entries/entry", token))
+        except urllib.error.URLError, TimeoutError, ConnectionError, OSError, json.JSONDecodeError:
+            state = None
+        if state == "loaded":
+            print(f"  {INTEGRATION_DOMAIN} is loaded")
+            return
+        missing = missing + 1 if state is None else 0
+        if missing >= HA_MISSING_ENTRY_ATTEMPTS:
+            print(f"  no {INTEGRATION_DOMAIN} config entry found; nothing to verify")
+            return
+        time.sleep(HA_READY_INTERVAL)
+
+    raise RuntimeError(
+        f"the {INTEGRATION_DOMAIN} config entry stayed '{state}' for {HA_READY_ATTEMPTS * HA_READY_INTERVAL}s"
+    )
+
+
 def restart_ha(ssh: paramiko.SSHClient, env: dict[str, str]) -> None:
-    """Restart the container and wait until the REST API answers again."""
+    """Restart the container, then wait until the integration is really loaded."""
     run(ssh, f"sudo rm -rf {REMOTE_DIR}/__pycache__")
     print("  __pycache__ removed")
     run(ssh, "sudo docker restart homeassistant > /dev/null 2>&1 || true")
@@ -204,28 +298,8 @@ def restart_ha(ssh: paramiko.SSHClient, env: dict[str, str]) -> None:
     if not token:
         return
 
-    import json
-    import urllib.error
-    import urllib.request
-
-    deadline = time.time() + 300
-    while time.time() < deadline:
-        time.sleep(5)
-        try:
-            request = urllib.request.Request(
-                # HA_URL, not a hardcoded host: the deployment target is
-                # configurable (HA_HOST / HA_URL) and the wait used to ignore it.
-                f"{HA_URL}/api/config",
-                headers={"Authorization": f"Bearer {token}"},
-            )
-            with urllib.request.urlopen(request, timeout=10) as response:
-                if response.status == 200:
-                    info = json.loads(response.read())
-                    print(f"  HA is back: {info.get('version')}")
-                    return
-        except urllib.error.URLError, TimeoutError, ConnectionError, OSError:
-            continue
-    raise RuntimeError("HA did not come back within 300s")
+    _wait_for_api(token)
+    _wait_for_integration(token)
 
 
 def main() -> int:

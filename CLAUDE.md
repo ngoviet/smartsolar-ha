@@ -3,7 +3,7 @@
 > **System info**: [../System_info/CLAUDE.md](../System_info/CLAUDE.md) — HA at 192.168.10.15, network, credentials
 > **Code search**: `semble search "query" .` — intent-based, ~98% fewer tokens than grep
 
-Home Assistant custom integration for SmartSolar MPPT solar charge controllers. Fetches real-time metrics via HTTP API from `api.smartsolar.io.vn` and MQTT WebSocket Secure from `mqttx.smartsolar.io.vn:8084`. **Current version: v2.0.2**. Verified live against HA **2026.9.3** on 2026-09-27 (v2.0.0 tree).
+Home Assistant custom integration for SmartSolar MPPT solar charge controllers. Fetches real-time metrics via HTTP API from `api.smartsolar.io.vn` and MQTT WebSocket Secure from `mqttx.smartsolar.io.vn:8084`. **Current version: v2.0.2**. Verified live against HA **2026.9.4** on 2026-09-28 (v2.0.2 tree; the test extra pins that same version).
 
 > ⚠️ **v2.0.0 renamed the domain from `smartsolar_mppt` to `smartsolar_ha`.**
 > Home Assistant identifies an integration by its folder name, which must equal
@@ -185,15 +185,21 @@ named the old repository.
   hard-coded `N passed` shield. The static figure had gone stale twice — it read
   366 while the tree had 551, then 555 while the tree had 553 — so the badge now
   reports the CI run itself instead of a number that has to be remembered. The
-  suite reports **553 passed, 1 skipped**, and the CI Tests job reports the same
-  totals (verified in the run log for the merged commit).
+  suite reports **559 passed, 1 skipped**.
+- Added after the release tag, still without touching integration code:
+  `deploy_to_ha.py` now waits until this integration's config entry reports
+  `loaded` before it calls the deploy done, so `verify_live.py` can be chained
+  straight to it (it used to see **zero** entities); and the `[test]` extra pins
+  `homeassistant==2026.9.4` — the version the live instance actually runs — so
+  the gate stops testing an older Home Assistant than production.
 - Carried over from the deploy-extra review pass (already on `main`): the
   `deploy` extra is pinned precisely and covered by a behavioural import test
   instead of source parsing.
 
 > The v2.0.1 section below records that audit's own numbers (tests 366 → 551).
-> The suite has since changed by the deploy-extra pass (+2 net), which is why
-> the current tree reports 553 passed.
+> The suite has grown since — the deploy-extra pass changed it by +2 net and the
+> deploy-readiness waits added 6 — which is why the current tree reports 559
+> passed.
 
 ## v2.0.1 — Second Audit (2026-09-27)
 
@@ -302,7 +308,7 @@ entries must be re-added; entity names were left alone so entity_id / dashboards
 | 7 | MQTT `null` fields were written into `dataStreams` as the string `"None"`, shadowing the real REST value | `_mqtt_to_data_stream()` drops `None` values |
 | 8 | `SmartSolarMQTTClient.connected` stayed `True` after `stop()` / a finished message loop → diagnostics reported a live connection that did not exist | Flag cleared in `stop()` and on loop exit |
 | 9 | The `refresh_token` service accepted a **missing `entry_id`** and silently did nothing (contradicting `services.yaml`) | `vol.Required("entry_id")` + `ServiceValidationError` for an unknown entry |
-| 10 | `allow_multiple_instances = True` in the config flow is **not a Home Assistant attribute** (verified against `config_entries.py` in 2026.9.2) — dead, misleading code | Removed; multiple entries are allowed because the manifest omits `single_config_entry` |
+| 10 | `allow_multiple_instances = True` in the config flow is **not a Home Assistant attribute** (verified against `config_entries.py` in 2026.9.2, re-checked in 2026.9.4) — dead, misleading code | Removed; multiple entries are allowed because the manifest omits `single_config_entry` |
 | 11 | `verify_live.py` **crashed with a traceback** (instead of reporting FAIL) whenever a state was `unknown`/`unavailable`, and on a missing `HA_TOKEN` | `as_float()` helper, plus explicit messages for a missing token / unreachable instance |
 | 12 | The local deploy gate linted **fewer files than CI** (`upload_to_ha.py` only, so `deploy_to_ha.py`/`verify_live.py` were unchecked) | One shared `SOURCES` list mirrored in `ci.yml` |
 | 13 | Test fixtures handed out **shallow copies** of the recorded payloads while the coordinator merges MQTT data in place → cross-test contamination (two tests only passed because they compared against an object the code had already mutated) | `deepcopy` in `conftest.py` and at every mutation site; `TestFixtureIsolation` in `test_coordinator.py` |
@@ -403,8 +409,9 @@ HA test harness either.
 
 `deploy_to_ha.py` is the supported path. It refuses to ship unless lint, format,
 mypy and the full test suite pass, archives what is currently deployed to
-`_local_archive/deployed/`, uploads, clears `__pycache__`, restarts the container
-and waits for the REST API to answer again:
+`_local_archive/deployed/`, uploads, clears `__pycache__`, restarts the container,
+waits for the REST API to answer **and then for this integration's config entry to
+report `loaded`**, so `verify_live.py` can be chained directly to it:
 
 ```bash
 cd d:/code/smartsolar_ha
@@ -412,6 +419,16 @@ cd d:/code/smartsolar_ha
 .venv/Scripts/python deploy_to_ha.py --skip-checks # emergency re-push
 .venv/Scripts/python verify_live.py                # assert the live entities are right
 ```
+
+> ⚠️ **Why the extra wait:** Home Assistant answers on `/api/config` as soon as
+> its HTTP component is up, *before* the integration platforms are added. The
+> deploy used to return at that point, so a verification run chained immediately
+> after it found **zero** entities and reported every check as missing — observed
+> live on 2026-09-28 (0 entities at once, 38 five seconds later). `restart_ha()`
+> now also polls `/api/config/config_entries/entry` until the folder-named domain
+> reports `loaded`, and refuses the deploy when the entry stays in
+> `setup_retry`/`setup_error`. An entry that is *absent* is reported (a fresh
+> install, or a domain rename) rather than waited on.
 
 > ⚠️ **Changing the domain breaks the deployed config entry.** Home Assistant
 > resolves an entry by its `domain`, so an entry stored for `smartsolar_mppt`
