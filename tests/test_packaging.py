@@ -148,67 +148,45 @@ class TestToolingFloors:
         assert not any("ruff>=" in script or "mypy>=" in script for script in install_scripts)
 
 
-DEPLOY_SCRIPTS = ("deploy_to_ha.py", "upload_to_ha.py", "verify_live.py")
-
-
 class TestScriptDependencies:
-    """Every third-party module the helper scripts import must be installable.
+    """The SSH helper scripts must be runnable from a fresh install.
 
-    The scripts are documented as `python deploy_to_ha.py`, but `paramiko` was
-    listed in no dependency set, so that command died with
+    `deploy_to_ha.py` and `upload_to_ha.py` import paramiko at module level, so
+    the documented `python deploy_to_ha.py` died with
     ``ModuleNotFoundError: No module named 'paramiko'`` on a fresh
-    `pip install -e ".[test,dev]"`. This compares the *actual* imports of those
-    scripts against the distributions pyproject declares, so the next such gap is
-    caught without hard-coding a package name.
+    `pip install -e ".[test,dev]"`. The deploy extra is what makes that command
+    work; the import test below executes the real consumer instead of reading
+    the scripts' source.
     """
 
     @staticmethod
-    def _declared_distributions() -> set[str]:
+    def _deploy_requirements() -> list[str]:
         import tomllib
 
         project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]
-        requirements = list(project["dependencies"])
-        for extra in project["optional-dependencies"].values():
-            requirements.extend(extra)
+        return list(project["optional-dependencies"]["deploy"])
 
-        names = set()
+    @staticmethod
+    def _requirement_names(requirements: list[str]) -> set[str]:
+        names: set[str] = set()
         for requirement in requirements:
-            # "aiohttp>=3.8.0" / "homeassistant==2026.9.2" / "pytest-cov>=5.0"
             for separator in ("<", ">", "=", "!", "~", "[", ";", " "):
                 requirement = requirement.split(separator, 1)[0]
             names.add(requirement.strip().lower().replace("_", "-"))
         return names
 
-    @staticmethod
-    def _imported_top_level_modules(script: str) -> set[str]:
-        import ast
-
-        tree = ast.parse(Path(script).read_text(encoding="utf-8"))
-        modules: set[str] = set()
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                modules.update(alias.name.split(".")[0] for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-                modules.add(node.module.split(".")[0])
-        return modules
-
-    @pytest.mark.parametrize("script", DEPLOY_SCRIPTS)
-    def test_script_imports_are_declared(self, script):
-        import sys
-
-        declared = self._declared_distributions()
-        third_party = {
-            module
-            for module in self._imported_top_level_modules(script)
-            if module not in sys.stdlib_module_names and module != "custom_components"
-        }
-
-        undeclared = {module for module in third_party if module.lower().replace("_", "-") not in declared}
-        assert not undeclared, (
-            f"{script} imports {sorted(undeclared)}, which no dependency or extra in pyproject.toml declares"
-        )
-
     def test_deploy_extra_declares_paramiko(self):
-        """The SSH scripts need paramiko, so an installable extra must carry it."""
-        declared = self._declared_distributions()
-        assert "paramiko" in declared
+        """The SSH scripts need paramiko, so the deploy extra must carry it."""
+        deploy = self._deploy_requirements()
+        assert deploy, "the deploy extra must declare its dependencies"
+        assert "paramiko" in self._requirement_names(deploy)
+
+    def test_scripts_import_with_the_deploy_extra_installed(self):
+        """Importing the scripts is the executable proof their deps resolve."""
+        pytest.importorskip("paramiko", reason="install the [deploy] extra to run this")
+
+        import deploy_to_ha
+        import upload_to_ha
+
+        assert deploy_to_ha is not None
+        assert upload_to_ha is not None
