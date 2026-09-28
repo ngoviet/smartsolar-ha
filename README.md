@@ -261,7 +261,7 @@ No configuration change: this release only fixes behaviour, so an existing
 - **Project status sensor always returned `unknown`** — status was mapped to text
   before cross-device aggregation. The numeric code is aggregated first, then mapped.
 - **API retry/backoff actually runs now.** `_request_with_retry` existed but no
-  request used it, so the documented 1s/2s/4s retry never happened.
+  request used it, so the documented 1s/2s retry never happened.
 - **Token expiry parsing can no longer break refreshes.** A naive timestamp from
   the API used to raise `TypeError` when compared with an aware `utcnow()`.
 - **MQTT data from other customers is rejected.** The SmartSolar broker is shared
@@ -318,7 +318,7 @@ No configuration change: this release only fixes behaviour, so an existing
 **New Features:**
 - **Re-authentication flow** (`async_step_reauth`) — handle expired credentials without re-configuring
 - **Config entry diagnostics** (`diagnostics.py`) — download detailed diagnostics from HA UI
-- **Exponential backoff retry** — 3 attempts with 1s/2s/4s backoff for network errors and 5xx server errors
+- **Exponential backoff retry** — 3 attempts with 1s/2s backoff for network errors and 5xx server errors
 - **Config migration** (`async_migrate_entry`) — seamless upgrade from v1.1/1.2 config entries
 
 **Code Quality:**
