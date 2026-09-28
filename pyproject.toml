@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 include = ["custom_components*"]
 
 [project]
-name = "smartsolar-ha"
+name = "smartsolar_ha"
 version = "2.0.1"
 description = "Home Assistant custom integration for SmartSolar MPPT solar charge controllers"
 readme = "README.md"
