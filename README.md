@@ -1,13 +1,13 @@
 # SmartSolar MPPT — Home Assistant Integration
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
-[![GitHub release](https://img.shields.io/github/release/ngoviet/smartsolar-ha.svg)](https://github.com/ngoviet/smartsolar-ha/releases)
+[![GitHub release](https://img.shields.io/github/release/ngoviet/smartsolar_ha.svg)](https://github.com/ngoviet/smartsolar_ha/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![HA Version](https://img.shields.io/badge/Home%20Assistant-2026.9%2B-41BDF5)](https://www.home-assistant.io)
-[![Tests](https://img.shields.io/badge/tests-551%20passed-brightgreen)](https://github.com/ngoviet/smartsolar-ha)
+[![Tests](https://img.shields.io/badge/tests-555%20passed-brightgreen)](https://github.com/ngoviet/smartsolar_ha)
 [![Python](https://img.shields.io/badge/python-3.14%2B-blue)](https://www.python.org)
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ngoviet&repository=smartsolar-ha&category=integration)
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ngoviet&repository=smartsolar_ha&category=integration)
 
 Home Assistant custom integration for **SmartSolar MPPT** solar charge controllers. Monitor PV voltage, charge current, daily/total energy, temperature, device status, and WiFi signal quality in real time via the SmartSolar Cloud API and MQTT.
 
@@ -61,7 +61,7 @@ Compatible with other SmartSolar devices using the same cloud API.
 
 ### HACS (Recommended)
 
-1. Add this repository to HACS: `https://github.com/ngoviet/smartsolar-ha`
+1. Add this repository to HACS: `https://github.com/ngoviet/smartsolar_ha`
 2. Search for **"SmartSolar MPPT"** in HACS → Integrations
 3. Click **Download**
 4. Restart Home Assistant
@@ -71,7 +71,7 @@ Compatible with other SmartSolar devices using the same cloud API.
 ```bash
 cd /config/custom_components
 # the folder name must match the integration domain
-git clone https://github.com/ngoviet/smartsolar-ha.git smartsolar_ha
+git clone https://github.com/ngoviet/smartsolar_ha.git smartsolar_ha
 # Restart Home Assistant
 ```
 
@@ -374,9 +374,9 @@ No configuration change: this release only fixes behaviour, so an existing
 
 Issues and pull requests are welcome.
 
-- **Bug reports**: [Open an issue](https://github.com/ngoviet/smartsolar-ha/issues/new)
-- **Feature requests**: [Open an issue](https://github.com/ngoviet/smartsolar-ha/issues/new)
-- **Code**: [Create a pull request](https://github.com/ngoviet/smartsolar-ha/compare)
+- **Bug reports**: [Open an issue](https://github.com/ngoviet/smartsolar_ha/issues/new)
+- **Feature requests**: [Open an issue](https://github.com/ngoviet/smartsolar_ha/issues/new)
+- **Code**: [Create a pull request](https://github.com/ngoviet/smartsolar_ha/compare)
 
 ## License
 

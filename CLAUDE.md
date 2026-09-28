@@ -255,10 +255,12 @@ password and token are redacted.
 `smartsolar_mppt` → **`smartsolar_ha`** (folder, `manifest.domain`,
 `const.DOMAIN`, imports, deploy/verify paths, docs). HA resolves an integration
 as `custom_components/<domain>/manifest.json` and restricts the domain to
-lowercase letters and underscores, so `smartsolar-ha` (hyphen) is not a valid
-domain, and renaming without changing the domain would make HA fail to find the
-integration. Existing config entries must be re-added; entity names were left
-alone so entity_id / dashboards / statistics survive. Tests: 261 → 366.
+lowercase letters and underscores, so a hyphenated name such as `smartsolar-ha`
+is not a valid *domain*, and renaming without changing the domain would make HA
+fail to find the integration. (The GitHub repository name is unrelated — it
+happens to be `smartsolar_ha` too, but HA never reads it.) Existing config
+entries must be re-added; entity names were left alone so entity_id / dashboards
+/ statistics survive. Tests: 261 → 366.
 
 | # | Bug | Fix |
 |---|-----|-----|

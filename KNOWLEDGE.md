@@ -4,9 +4,14 @@
 >
 > ⚠️ **v2.0.0 đổi domain `smartsolar_mppt` → `smartsolar_ha`** (thư mục, `manifest.domain`,
 > import, tên service, đường dẫn deploy). HA xác định integration theo **tên thư mục** phải
-> trùng `domain`, và domain chỉ được gồm chữ thường + gạch dưới — nên `smartsolar-ha`
-> (gạch ngang) không hợp lệ. Đây là **breaking change**: phải xoá config entry cũ rồi thêm lại;
-> tên entity giữ nguyên nên entity_id / dashboard / long-term statistics vẫn khớp.
+> trùng `manifest["domain"]` (`loader.Integration.resolve_from_root()` tìm
+> `custom_components/<domain>/manifest.json`), và domain chỉ được gồm chữ thường + gạch dưới —
+> nên `smartsolar-ha` (gạch ngang) **không phải domain hợp lệ**, và đổi tên thư mục mà không đổi
+> domain thì HA không tìm thấy integration. (Tên **repository GitHub** không liên quan: repo
+> tình cờ cũng là `smartsolar_ha`, nhưng HA không bao giờ đọc nó.)
+> Đây là **breaking change** với config entry cũ: hoặc migrate entry tại chỗ (đổi domain trong
+> `.storage` — quy trình đã kiểm chứng, xem `CLAUDE.md` §Deploying to HA), hoặc xoá entry rồi
+> thêm lại. Tên entity giữ nguyên nên entity_id / dashboard / long-term statistics vẫn khớp.
 >
 > Các chuỗi `smartsolar_mppt` còn lại trong tài liệu này là **dữ liệu lịch sử** (đường dẫn cũ,
 > log cũ, ví dụ entity_id sinh từ tên thiết bị), không phải cấu hình hiện hành.
