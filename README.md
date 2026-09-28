@@ -136,10 +136,10 @@ name.
   name is unrelated to the integration's domain — Home Assistant resolves an
   integration from its folder name, not from GitHub.
 - **The test badge is now the CI workflow badge** instead of a hard-coded
-  "N passed" shield. The static count went stale as soon as the test suite
-  changed, and a single number cannot be right for two environments anyway: the
-  suite is 553 passed + 1 skipped locally, while CI installs `[test]` only and
-  therefore also skips the `paramiko` import test (`552 passed, 2 skipped`).
+  "N passed" shield. The static figure had already gone stale twice — it read
+  366 while the tree had 551, and 555 while the tree had 553 — so the badge now
+  reports the CI run itself rather than a number someone has to remember to
+  update. (The suite reports 553 passed, 1 skipped.)
 - Also in this release: the deploy-extra review pass (the `pyproject.toml`
   `deploy` extra is pinned precisely and its coverage is a behavioural import
   test instead of source parsing), and the domain-migration guidance in
