@@ -91,7 +91,7 @@ class SmartSolarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     # because manifest.json does not set `single_config_entry`. An earlier
     # `allow_multiple_instances = True` attribute was a no-op: Home Assistant
     # has no such flag (checked against homeassistant/config_entries.py in
-    # 2026.9.2), only the manifest key above.
+    # 2026.9.2 and again in 2026.9.4), only the manifest key above.
 
     def __init__(self) -> None:
         """Initialize the config flow."""

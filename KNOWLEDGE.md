@@ -23,10 +23,15 @@
 > đổi tên `smartsolar-ha` → `smartsolar_ha` (slug repo nay khớp domain), mọi link/badge và
 > `documentation`/`issue_tracker` trong manifest trỏ URL mới; badge test trong README
 > chuyển sang badge động của CI thay vì số cứng (số cứng đã lệch hai lần: ghi 366 khi
-> cây có 551, rồi ghi 555 khi cây có 553; suite hiện tại: `553 passed, 1 skipped`).
+> cây có 551, rồi ghi 555 khi cây có 553; suite hiện tại: `559 passed, 1 skipped`).
 > Domain, tên entity, `unique_id`, service và config entry **không đổi** — không cần thêm lại.
 >
-> 📌 **v2.0.1 (27 bug đã fix, test 366 → 551 lúc audit; cây hiện tại 553)** — bảng audit đầy đủ nằm ở
+> 📌 **Sau khi tag v2.0.2 (vẫn không đổi code integration):** `deploy_to_ha.py` nay chờ
+> config entry báo `loaded` rồi mới kết thúc, nên chạy `verify_live.py` ngay sau deploy
+> không còn thấy 0 entity (đã gặp thật: 0 entity lúc deploy xong, 38 entity vài giây sau);
+> và extra `[test]` pin `homeassistant==2026.9.4` — đúng bản HA đang chạy thật.
+>
+> 📌 **v2.0.1 (27 bug đã fix, test 366 → 551 lúc audit; cây hiện tại 559)** — bảng audit đầy đủ nằm ở
 > [`CLAUDE.md`](CLAUDE.md). Các thay đổi hành vi cần biết khi đọc tài liệu này:
 > - Poll REST lỗi **không còn** làm entity `unavailable` khi MQTT vẫn đang có dữ liệu
 >   sống; entity `Update Frequency` luôn available.
@@ -476,7 +481,7 @@ SmartSolarAPIError(Exception)
 | Item | Value |
 |------|-------|
 | HA URL | `http://192.168.10.15:8123` |
-| HA Version | **2026.9.3** (HA Supervised, Docker) — đo 2026-09-27 |
+| HA Version | **2026.9.4** (HA Supervised, Docker) — đo 2026-09-28 |
 | HA Python | 3.14.6 — nên venv test local phải là Python **3.14** |
 | SSH | `vokupt@192.168.10.15` — password via `HA_PASS` env var |
 | HA Token (long-lived) | Trong `HA_info.txt` / `.env` |
@@ -485,7 +490,7 @@ SmartSolarAPIError(Exception)
 | SMB Frigate addon | `\\192.168.10.15\addon_configs\ccab4aaf_frigate\` |
 | HA restart API | `POST /api/services/homeassistant/restart` (503/504 = thành công) |
 | HA reload YAML | `POST /api/services/homeassistant/reload_all` (LƯU Ý: không reload được utility_meter) |
-| Deploy chuẩn | `python deploy_to_ha.py` (có gate lint/mypy/test) rồi `python verify_live.py` |
+| Deploy chuẩn | `python deploy_to_ha.py` (có gate lint/mypy/test, chờ tới khi config entry `loaded`) rồi `python verify_live.py` |
 
 ### 4.2 Config Entry Hiện Tại
 
