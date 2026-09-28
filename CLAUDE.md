@@ -3,7 +3,7 @@
 > **System info**: [../System_info/CLAUDE.md](../System_info/CLAUDE.md) — HA at 192.168.10.15, network, credentials
 > **Code search**: `semble search "query" .` — intent-based, ~98% fewer tokens than grep
 
-Home Assistant custom integration for SmartSolar MPPT solar charge controllers. Fetches real-time metrics via HTTP API from `api.smartsolar.io.vn` and MQTT WebSocket Secure from `mqttx.smartsolar.io.vn:8084`. **Current version: v2.0.1**. Verified live against HA **2026.9.3** on 2026-09-27 (v2.0.0 tree).
+Home Assistant custom integration for SmartSolar MPPT solar charge controllers. Fetches real-time metrics via HTTP API from `api.smartsolar.io.vn` and MQTT WebSocket Secure from `mqttx.smartsolar.io.vn:8084`. **Current version: v2.0.2**. Verified live against HA **2026.9.3** on 2026-09-27 (v2.0.0 tree).
 
 > ⚠️ **v2.0.0 renamed the domain from `smartsolar_mppt` to `smartsolar_ha`.**
 > Home Assistant identifies an integration by its folder name, which must equal
@@ -19,7 +19,7 @@ Home Assistant custom integration for SmartSolar MPPT solar charge controllers. 
 ```
 custom_components/smartsolar_ha/
 ├── __init__.py          # Integration entry point, setup/unload, service registration, async_migrate_entry
-├── manifest.json        # v2.0.1, domain=smartsolar_ha, config_flow=true
+├── manifest.json        # v2.0.2, domain=smartsolar_ha, config_flow=true
 ├── const.py             # Constants, SENSOR_TYPES, AGGREGATION, MQTT config, build_device_info helper
 ├── helpers.py           # Pure helpers: coerce_float, device_logs, as_list, stream_dict, guid_sort_key
 ├── config_flow.py       # Multi-step config flow: auth → mode → device/project, reauth, reconfigure
@@ -165,6 +165,36 @@ both chargers sit on the same 24 V bus, so summing reports ~53 V:
 Sensors in `const.UNRELIABLE_SYNTHESIS_SENSORS` (charge_power, currents,
 signal_quality) always aggregate locally because the server's
 `synthesisStreams` value is frequently stale or absent.
+
+## v2.0.2 — Repository Rename (2026-09-28)
+
+No integration code changed: the domain, entity names, `unique_id`s, services
+and config-entry keys are identical to v2.0.1, so an existing entry keeps
+working and no re-add is needed. This release republishes the metadata that
+named the old repository.
+
+- The GitHub repository was renamed `ngoviet/smartsolar-ha` →
+  **`ngoviet/smartsolar_ha`**, so the repository slug, the integration domain and
+  the manifest's `documentation`/`issue_tracker` finally agree. GitHub 301-
+  redirects the old slug, so existing clones and HACS installs keep resolving;
+  every README badge, link, the documented `git clone` command and the
+  `my.home-assistant.io` HACS link now use the canonical URL. The repository
+  name is still unrelated to the domain — HA resolves an integration from
+  `custom_components/<domain>/`, never from GitHub.
+- The README test badge is now the **CI workflow badge** rather than a
+  hard-coded `N passed` shield. The static figure went stale the moment the
+  suite changed (it read 366 while the tree had 551, then 555 while the tree had
+  553) and no single number can be right for both environments: locally
+  `553 passed, 1 skipped`, while CI installs `[test]` only, so it also skips the
+  `paramiko` import test → `552 passed, 2 skipped`. A count that changes with the
+  environment does not belong in a badge.
+- Carried over from the deploy-extra review pass (already on `main`): the
+  `deploy` extra is pinned precisely and covered by a behavioural import test
+  instead of source parsing.
+
+> The v2.0.1 section below records that audit's own numbers (tests 366 → 551).
+> The suite has since changed by the deploy-extra pass (+2 net), which is why
+> the current tree reports 553 passed.
 
 ## v2.0.1 — Second Audit (2026-09-27)
 

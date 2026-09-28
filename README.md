@@ -4,7 +4,7 @@
 [![GitHub release](https://img.shields.io/github/release/ngoviet/smartsolar_ha.svg)](https://github.com/ngoviet/smartsolar_ha/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![HA Version](https://img.shields.io/badge/Home%20Assistant-2026.9%2B-41BDF5)](https://www.home-assistant.io)
-[![Tests](https://img.shields.io/badge/tests-555%20passed-brightgreen)](https://github.com/ngoviet/smartsolar_ha)
+[![Tests](https://github.com/ngoviet/smartsolar_ha/actions/workflows/ci.yml/badge.svg)](https://github.com/ngoviet/smartsolar_ha/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.14%2B-blue)](https://www.python.org)
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ngoviet&repository=smartsolar_ha&category=integration)
@@ -119,6 +119,31 @@ SmartSolarDataUpdateCoordinator
 ```
 
 ## Changelog
+
+### v2.0.2 — repository rename release
+
+No behaviour change: nothing in the integration, its entities, services or
+config-entry keys changed, so an existing `smartsolar_ha` entry keeps working.
+This release only republishes the metadata that pointed at the old repository
+name.
+
+- **The GitHub repository is now `ngoviet/smartsolar_ha`** (it was
+  `ngoviet/smartsolar-ha`). The underscore matches the Home Assistant domain,
+  which may contain only lowercase letters and underscores. GitHub redirects the
+  old URLs, so existing clones and HACS installs keep working; every link,
+  badge, `manifest.json` `documentation`/`issue_tracker` and the documented
+  `git clone` command now name the canonical URL. Note that the *repository*
+  name is unrelated to the integration's domain — Home Assistant resolves an
+  integration from its folder name, not from GitHub.
+- **The test badge is now the CI workflow badge** instead of a hard-coded
+  "N passed" shield. The static count went stale as soon as the test suite
+  changed, and a single number cannot be right for two environments anyway: the
+  suite is 553 passed + 1 skipped locally, while CI installs `[test]` only and
+  therefore also skips the `paramiko` import test (`552 passed, 2 skipped`).
+- Also in this release: the deploy-extra review pass (the `pyproject.toml`
+  `deploy` extra is pinned precisely and its coverage is a behavioural import
+  test instead of source parsing), and the domain-migration guidance in
+  `CLAUDE.md`/`README.md` was corrected.
 
 ### v2.0.1 — audit release
 
