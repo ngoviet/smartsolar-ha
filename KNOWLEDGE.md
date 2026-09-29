@@ -1,6 +1,6 @@
 # SmartSolar MPPT MQ — Toàn Bộ Kiến Thức API & Tích Hợp
 
-> **Trạng thái**: ✅ LIVE · **Phiên bản**: **v2.0.2** (2026-09-28) · **Nguồn sự thật**: [../STATUS.md](../STATUS.md) · **Cập nhật**: 2026-09-28
+> **Trạng thái**: ✅ LIVE · **Phiên bản**: **v2.0.3** (2026-09-28) · **Nguồn sự thật**: [../STATUS.md](../STATUS.md) · **Cập nhật**: 2026-09-28
 >
 > ⚠️ **v2.0.0 đổi domain `smartsolar_mppt` → `smartsolar_ha`** (thư mục, `manifest.domain`,
 > import, tên service, đường dẫn deploy). HA xác định integration theo **tên thư mục** phải
@@ -26,13 +26,15 @@
 > cây có 551, rồi ghi 555 khi cây có 553; suite hiện tại: `567 passed, 1 skipped`).
 > Domain, tên entity, `unique_id`, service và config entry **không đổi** — không cần thêm lại.
 >
-> 📌 **Sau khi tag v2.0.2 (vẫn không đổi code integration):** `deploy_to_ha.py` nay chờ
-> config entry báo `loaded` rồi mới kết thúc; nhưng HA còn **ghi state của từng entity
+> 📌 **v2.0.3 (2026-09-28)** — vẫn **không đổi code integration** (không module nào trong
+> `custom_components/smartsolar_ha/` bị sửa), chỉ publish phần tooling + docs: `deploy_to_ha.py`
+> chờ config entry báo `loaded` rồi mới kết thúc; nhưng HA còn **ghi state của từng entity
 > không đồng bộ** sau đó (đo thật: ngay sau khi deploy in "smartsolar_ha is loaded",
 > `/api/states` chỉ có 12 entity, ~10–20 s sau mới đủ 38), nên `verify_live.py` cũng tự
 > chờ tối đa 12 lần × 5 s cho đủ các entity nó kiểm tra rồi mới kết luận. Chuỗi
 > `deploy_to_ha.py` → `verify_live.py` đã chạy thật trên host và pass (exit 0).
-> Ngoài ra extra `[test]` pin `homeassistant==2026.9.4` — đúng bản HA đang chạy thật.
+> Ngoài ra extra `[test]` pin `homeassistant==2026.9.4` — đúng bản HA đang chạy thật —
+> và README được viết lại (bỏ mục Changelog, release notes nằm ở GitHub Releases).
 >
 > 📌 **v2.0.1 (27 bug đã fix, test 366 → 551 lúc audit; cây hiện tại 567)** — bảng audit đầy đủ nằm ở
 > [`CLAUDE.md`](CLAUDE.md). Các thay đổi hành vi cần biết khi đọc tài liệu này:
@@ -1174,8 +1176,8 @@ Linting: ruff
 
 ### 8.4 Tài liệu cần cập nhật khi release
 
-- `README.md` — English, badges, install guide
-- `README.vi.md` — Tiếng Việt cho người dùng VN
+- `README.md` — English, badges, install guide (mục Changelog đã bỏ; release notes nằm ở GitHub Releases và bảng audit đầy đủ ở `CLAUDE.md`)
+- Chú thích tiếng Việt cho người dùng cuối nằm trong `custom_components/smartsolar_ha/translations/vi.json` (không có `README.vi.md` riêng)
 - `CLAUDE.md` — cho AI agents
 - `KNOWLEDGE.md` — file này, cập nhật theo version mới
 - Wiki pages trên GitHub (nếu có)
