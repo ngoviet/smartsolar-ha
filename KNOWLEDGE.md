@@ -23,15 +23,18 @@
 > đổi tên `smartsolar-ha` → `smartsolar_ha` (slug repo nay khớp domain), mọi link/badge và
 > `documentation`/`issue_tracker` trong manifest trỏ URL mới; badge test trong README
 > chuyển sang badge động của CI thay vì số cứng (số cứng đã lệch hai lần: ghi 366 khi
-> cây có 551, rồi ghi 555 khi cây có 553; suite hiện tại: `561 passed, 1 skipped`).
+> cây có 551, rồi ghi 555 khi cây có 553; suite hiện tại: `567 passed, 1 skipped`).
 > Domain, tên entity, `unique_id`, service và config entry **không đổi** — không cần thêm lại.
 >
 > 📌 **Sau khi tag v2.0.2 (vẫn không đổi code integration):** `deploy_to_ha.py` nay chờ
-> config entry báo `loaded` rồi mới kết thúc, nên chạy `verify_live.py` ngay sau deploy
-> không còn thấy 0 entity (đã gặp thật: 0 entity lúc deploy xong, 38 entity vài giây sau);
-> và extra `[test]` pin `homeassistant==2026.9.4` — đúng bản HA đang chạy thật.
+> config entry báo `loaded` rồi mới kết thúc; nhưng HA còn **ghi state của từng entity
+> không đồng bộ** sau đó (đo thật: ngay sau khi deploy in "smartsolar_ha is loaded",
+> `/api/states` chỉ có 12 entity, ~10–20 s sau mới đủ 38), nên `verify_live.py` cũng tự
+> chờ tối đa 12 lần × 5 s cho đủ các entity nó kiểm tra rồi mới kết luận. Chuỗi
+> `deploy_to_ha.py` → `verify_live.py` đã chạy thật trên host và pass (exit 0).
+> Ngoài ra extra `[test]` pin `homeassistant==2026.9.4` — đúng bản HA đang chạy thật.
 >
-> 📌 **v2.0.1 (27 bug đã fix, test 366 → 551 lúc audit; cây hiện tại 561)** — bảng audit đầy đủ nằm ở
+> 📌 **v2.0.1 (27 bug đã fix, test 366 → 551 lúc audit; cây hiện tại 567)** — bảng audit đầy đủ nằm ở
 > [`CLAUDE.md`](CLAUDE.md). Các thay đổi hành vi cần biết khi đọc tài liệu này:
 > - Poll REST lỗi **không còn** làm entity `unavailable` khi MQTT vẫn đang có dữ liệu
 >   sống; entity `Update Frequency` luôn available.

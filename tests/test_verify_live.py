@@ -152,3 +152,112 @@ class TestMainGuards:
             assert verify_live.main() == 2
 
         assert "Could not read states" in capsys.readouterr().out
+
+
+def _state(entity_id: str, state: str) -> dict[str, str]:
+    return {"entity_id": entity_id, "state": state}
+
+
+def _complete_state_machine() -> list[dict[str, str]]:
+    """A settled instance: every entity the verifier reads carries a real value."""
+    states = [_state(entity, "1.0") for entity in verify_live.expected_entities()]
+    values = {
+        f"{verify_live.PREFIX}total_battery_voltage": "27.53",
+        f"{verify_live.PREFIX}pv1_total_energy": "389.364",
+        f"{verify_live.PREFIX}total_status": "Online",
+        f"{verify_live.PREFIX}pv2_wifi_signal": "unknown",
+        verify_live.NUMBER_ENTITY: "5.0",
+    }
+    return [dict(entry, state=values.get(entry["entity_id"], entry["state"])) for entry in states]
+
+
+def _serving_states(payloads: list[list[dict[str, str]]], seen: list[str]):
+    """Serve ``/api/states`` from ``payloads`` in order, repeating the last one."""
+    remaining = list(payloads)
+
+    def fake_urlopen(request: object, timeout: int | None = None) -> _FakeResponse:
+        del timeout
+        seen.append(request.full_url)  # type: ignore[attr-defined]
+        payload = remaining.pop(0) if len(remaining) > 1 else (remaining[0] if remaining else [])
+        return _FakeResponse(json.dumps(payload).encode())
+
+    return fake_urlopen
+
+
+class TestSettlingStateMachine:
+    """HA writes entity states asynchronously after a restart.
+
+    A verification chained straight to a deploy used to read a half-filled state
+    machine and report every missing entity as a failure, even though the
+    integration was loaded and those entities appeared seconds later.
+    """
+
+    @staticmethod
+    def _run(monkeypatch, payloads):
+        seen: list[str] = []
+        monkeypatch.setattr(verify_live.urllib.request, "urlopen", _serving_states(payloads, seen))
+        monkeypatch.setattr(verify_live, "load_env", lambda: {"HA_TOKEN": "t"})
+        monkeypatch.setattr(verify_live.time, "sleep", lambda _seconds: None)
+        return seen
+
+    def test_waits_for_the_expected_entities_and_then_passes(self, monkeypatch, capsys):
+        partial = [entry for entry in _complete_state_machine() if not entry["entity_id"].endswith("total_status")]
+        seen = self._run(monkeypatch, [partial, _complete_state_machine()])
+
+        assert verify_live.main() == 0
+
+        out = capsys.readouterr().out
+        assert "waiting for 1 entity/entities to appear" in out
+        assert "All live checks passed." in out
+        assert len(seen) == 2, "it must read the states again after the wait"
+
+    def test_does_not_wait_when_everything_is_already_there(self, monkeypatch, capsys):
+        seen = self._run(monkeypatch, [_complete_state_machine()])
+
+        assert verify_live.main() == 0
+
+        out = capsys.readouterr().out
+        assert "waiting for" not in out
+        assert len(seen) == 1
+
+    def test_reports_the_entities_that_never_appear(self, monkeypatch, capsys):
+        monkeypatch.setattr(verify_live, "SETTLE_ATTEMPTS", 3)
+        partial = [entry for entry in _complete_state_machine() if not entry["entity_id"].endswith("peak_power_today")]
+        seen = self._run(monkeypatch, [partial])
+
+        assert verify_live.main() == 1
+
+        out = capsys.readouterr().out
+        assert "gave up after 3 polls; still missing:" in out
+        assert f"FAIL {verify_live.PREFIX}pv1_peak_power_today is missing" in out
+        assert len(seen) == 3, "the wait is bounded by SETTLE_ATTEMPTS"
+
+    def test_a_settling_instance_that_never_settles_still_reports(self, monkeypatch, capsys):
+        """An empty state machine is a FAIL, not a crash or a silent pass."""
+        monkeypatch.setattr(verify_live, "SETTLE_ATTEMPTS", 2)
+        seen = self._run(monkeypatch, [[]])
+
+        assert verify_live.main() == 1
+
+        out = capsys.readouterr().out
+        assert "integration provides 0 entities" in out
+        assert len(seen) == 2
+
+
+class TestExpectedEntities:
+    """The wait list must cover every entity the checks read, or it proves nothing."""
+
+    def test_covers_every_asserted_entity(self):
+        expected = verify_live.expected_entities()
+
+        assert len(expected) == len(set(expected))
+        for name in (
+            f"{verify_live.PREFIX}pv1_peak_power_today",
+            f"{verify_live.PREFIX}pv2_production_hours_today",
+            f"{verify_live.PREFIX}pv1_wifi_signal",
+            f"{verify_live.PREFIX}total_battery_voltage",
+            f"{verify_live.PREFIX}total_status",
+            f"{verify_live.PREFIX}pv1_total_energy",
+            verify_live.NUMBER_ENTITY,
+        ):
+            assert name in expected
