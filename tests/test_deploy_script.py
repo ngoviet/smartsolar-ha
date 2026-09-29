@@ -244,7 +244,12 @@ class TestRestartWaitsForTheIntegrationToLoad:
 
     @staticmethod
     def _serve(monkeypatch, entry_payloads):
-        """Answer /api/config with a version and the entry listing in sequence."""
+        """Answer /api/config with a version and the entry listing in sequence.
+
+        The last payload is repeated once the sequence is exhausted, so a test
+        can describe a steady state with a single item. An ``Exception`` item is
+        raised out of ``urlopen`` instead, to model an unreadable answer.
+        """
         calls: list[str] = []
         remaining = list(entry_payloads)
 
@@ -252,7 +257,10 @@ class TestRestartWaitsForTheIntegrationToLoad:
             calls.append(request.full_url)
             if request.full_url.endswith("/api/config"):
                 return _JsonResponse({"version": "2026.9.4"})
-            return _JsonResponse(remaining.pop(0) if remaining else None)
+            item = remaining.pop(0) if len(remaining) > 1 else (remaining[0] if remaining else None)
+            if isinstance(item, Exception):
+                raise item
+            return _JsonResponse(item)
 
         monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
         monkeypatch.setattr(deploy_to_ha, "HA_URL", "http://ha.example:9999")
@@ -297,7 +305,7 @@ class TestRestartWaitsForTheIntegrationToLoad:
 
     def test_reports_an_entry_that_never_loads(self, monkeypatch):
         monkeypatch.setattr(deploy_to_ha, "HA_READY_ATTEMPTS", 3)
-        self._serve(monkeypatch, [[{"domain": "smartsolar_ha", "state": "setup_error"}]] * 5)
+        self._serve(monkeypatch, [[{"domain": "smartsolar_ha", "state": "setup_error"}]])
 
         with pytest.raises(RuntimeError, match="setup_error"):
             deploy_to_ha.restart_ha(FakeSSH(), {"HA_TOKEN": "token"})
@@ -310,13 +318,40 @@ class TestRestartWaitsForTheIntegrationToLoad:
         assert len(calls) == 1 + deploy_to_ha.HA_MISSING_ENTRY_ATTEMPTS
         assert "no smartsolar_ha config entry found" in capsys.readouterr().out
 
-    def test_tolerates_a_malformed_entry_listing(self, monkeypatch, capsys):
-        calls = self._serve(monkeypatch, [{"unexpected": "mapping"}])
+    def test_an_unreadable_listing_is_not_an_absent_entry(self, monkeypatch, capsys):
+        """A timed-out listing must not be reported as "no entry, nothing to verify"."""
+        calls = self._serve(
+            monkeypatch,
+            [
+                urllib.error.URLError("timed out"),
+                [{"domain": "smartsolar_ha", "state": "loaded"}],
+            ],
+        )
 
         deploy_to_ha.restart_ha(FakeSSH(), {"HA_TOKEN": "token"})
 
-        assert len(calls) == 1 + deploy_to_ha.HA_MISSING_ENTRY_ATTEMPTS
-        assert "no smartsolar_ha config entry found" in capsys.readouterr().out
+        assert len(calls) == 3, "the wait must continue after an unreadable answer"
+        out = capsys.readouterr().out
+        assert "smartsolar_ha is loaded" in out
+        assert "no smartsolar_ha config entry found" not in out
+
+    def test_fails_when_the_listing_is_never_readable(self, monkeypatch, capsys):
+        monkeypatch.setattr(deploy_to_ha, "HA_READY_ATTEMPTS", 3)
+        self._serve(monkeypatch, [urllib.error.URLError("connection refused")])
+
+        with pytest.raises(RuntimeError, match="could not read the smartsolar_ha config-entry listing"):
+            deploy_to_ha.restart_ha(FakeSSH(), {"HA_TOKEN": "token"})
+
+        assert "no smartsolar_ha config entry found" not in capsys.readouterr().out
+
+    def test_a_malformed_listing_is_not_an_absent_entry(self, monkeypatch, capsys):
+        monkeypatch.setattr(deploy_to_ha, "HA_READY_ATTEMPTS", 3)
+        self._serve(monkeypatch, [{"unexpected": "mapping"}])
+
+        with pytest.raises(RuntimeError, match="could not read the smartsolar_ha config-entry listing"):
+            deploy_to_ha.restart_ha(FakeSSH(), {"HA_TOKEN": "token"})
+
+        assert "no smartsolar_ha config entry found" not in capsys.readouterr().out
 
 
 class TestUploadScript:

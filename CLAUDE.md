@@ -185,7 +185,7 @@ named the old repository.
   hard-coded `N passed` shield. The static figure had gone stale twice — it read
   366 while the tree had 551, then 555 while the tree had 553 — so the badge now
   reports the CI run itself instead of a number that has to be remembered. The
-  suite reports **559 passed, 1 skipped**.
+  suite reports **561 passed, 1 skipped**.
 - Added after the release tag, still without touching integration code:
   `deploy_to_ha.py` now waits until this integration's config entry reports
   `loaded` before it calls the deploy done, so `verify_live.py` can be chained
@@ -198,7 +198,7 @@ named the old repository.
 
 > The v2.0.1 section below records that audit's own numbers (tests 366 → 551).
 > The suite has grown since — the deploy-extra pass changed it by +2 net and the
-> deploy-readiness waits added 6 — which is why the current tree reports 559
+> deploy-readiness waits added 8 — which is why the current tree reports 561
 > passed.
 
 ## v2.0.1 — Second Audit (2026-09-27)
@@ -427,8 +427,12 @@ cd d:/code/smartsolar_ha
 > live on 2026-09-28 (0 entities at once, 38 five seconds later). `restart_ha()`
 > now also polls `/api/config/config_entries/entry` until the folder-named domain
 > reports `loaded`, and refuses the deploy when the entry stays in
-> `setup_retry`/`setup_error`. An entry that is *absent* is reported (a fresh
-> install, or a domain rename) rather than waited on.
+> `setup_retry`/`setup_error`. Three outcomes are kept apart: a listing that was
+> *read* and does not mention the domain is reported and the deploy continues (a
+> fresh install, or a domain rename, has nothing to verify); a listing that could
+> **not** be read (HTTP error, timeout, non-list body) is neither absence nor
+> failure, so it keeps waiting and then fails the deploy — treating it as absence
+> would report success without ever having seen `loaded`.
 
 > ⚠️ **Changing the domain breaks the deployed config entry.** Home Assistant
 > resolves an entry by its `domain`, so an entry stored for `smartsolar_mppt`

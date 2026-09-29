@@ -221,20 +221,21 @@ def _fetch_json(url: str, token: str) -> object:
         return json.loads(response.read())
 
 
-def _entry_state(payload: object) -> str | None:
-    """Return this integration's config-entry state from the REST listing.
+def _entry_status(payload: object) -> tuple[bool, str]:
+    """Report whether this integration is listed, and in which state.
 
-    Home Assistant keeps listing an entry it failed to load (``setup_retry`` /
-    ``setup_error``), so an entry that is *absent* means no entry exists for this
-    domain at all — not that it is still starting.
+    A *valid* listing distinguishes the two cases that matter: Home Assistant
+    keeps listing an entry it failed to load (``setup_retry`` / ``setup_error``),
+    so "listed but not loaded" is not the same as "no entry for this domain".
+    A payload that is not a list is neither: it is an unreadable answer.
     """
     if not isinstance(payload, list):
-        return None
+        return False, ""
     for entry in payload:
         if isinstance(entry, dict) and entry.get("domain") == INTEGRATION_DOMAIN:
             state = entry.get("state")
-            return state if isinstance(state, str) else None
-    return None
+            return True, state if isinstance(state, str) else ""
+    return False, ""
 
 
 def _wait_for_api(token: str) -> None:
@@ -259,31 +260,64 @@ def _wait_for_integration(token: str) -> None:
 
     The REST API answers while the integration platforms are still being added,
     so "the API replied" is not "the deployment is live": a verification run
-    chained right after the restart used to find zero entities. An entry that
-    never appears is reported instead of waited on — that is a fresh install or
-    a renamed domain, where there is nothing to verify yet.
+    chained right after the restart used to find zero entities.
+
+    Three outcomes are kept apart on purpose. A listing that was *read* and does
+    not mention this domain is reported and the deploy continues (a fresh
+    install, or a renamed domain, has nothing to verify). A listing that was read
+    but shows another state keeps waiting and then fails, because that is the
+    new code not loading. A listing that could **not** be read (HTTP error,
+    timeout, non-list body) is neither absence nor failure yet — treating it as
+    absence used to report a clean success without ever seeing ``loaded``.
     """
     import json
     import urllib.error
 
-    state: str | None = None
+    state = ""
+    read_listing = False
+    seen_domain = False
     missing = 0
     for _attempt in range(HA_READY_ATTEMPTS):
         try:
-            state = _entry_state(_fetch_json(f"{HA_URL}/api/config/config_entries/entry", token))
+            payload = _fetch_json(f"{HA_URL}/api/config/config_entries/entry", token)
         except urllib.error.URLError, TimeoutError, ConnectionError, OSError, json.JSONDecodeError:
-            state = None
-        if state == "loaded":
-            print(f"  {INTEGRATION_DOMAIN} is loaded")
-            return
-        missing = missing + 1 if state is None else 0
-        if missing >= HA_MISSING_ENTRY_ATTEMPTS:
-            print(f"  no {INTEGRATION_DOMAIN} config entry found; nothing to verify")
-            return
+            payload = None
+
+        if not isinstance(payload, list):
+            # An unreadable answer is neither absence nor failure yet, and it
+            # must not count towards the "no entry" threshold.
+            time.sleep(HA_READY_INTERVAL)
+            continue
+
+        read_listing = True
+        listed_now, state_now = _entry_status(payload)
+        if listed_now:
+            seen_domain = True
+            missing = 0
+            if state_now:
+                state = state_now
+            if state_now == "loaded":
+                print(f"  {INTEGRATION_DOMAIN} is loaded")
+                return
+        else:
+            # A listing that was read and does not mention this domain.
+            missing += 1
+            if missing >= HA_MISSING_ENTRY_ATTEMPTS:
+                print(f"  no {INTEGRATION_DOMAIN} config entry found; nothing to verify")
+                return
         time.sleep(HA_READY_INTERVAL)
 
+    if not read_listing:
+        raise RuntimeError(
+            f"could not read the {INTEGRATION_DOMAIN} config-entry listing from "
+            f"{HA_URL}/api/config/config_entries/entry within {HA_READY_ATTEMPTS * HA_READY_INTERVAL}s"
+        )
+    if not seen_domain:
+        print(f"  no {INTEGRATION_DOMAIN} config entry found; nothing to verify")
+        return
     raise RuntimeError(
-        f"the {INTEGRATION_DOMAIN} config entry stayed '{state}' for {HA_READY_ATTEMPTS * HA_READY_INTERVAL}s"
+        f"the {INTEGRATION_DOMAIN} config entry stayed '{state or 'unknown'}' "
+        f"for {HA_READY_ATTEMPTS * HA_READY_INTERVAL}s"
     )
 
 
