@@ -429,8 +429,9 @@ cd d:/code/smartsolar_ha
 > live on 2026-09-28 (0 entities at once, 38 five seconds later). `restart_ha()`
 > now also polls `/api/config/config_entries/entry` until the folder-named domain
 > reports `loaded`, and refuses the deploy when the entry stays in
-> `setup_retry`/`setup_error`. Three outcomes are kept apart: a listing that was
-> *read* and does not mention the domain is reported and the deploy continues (a
+> `setup_retry`/`setup_error`. The outcomes are kept apart: a listing that was
+> *read* but does not mention the domain is retried up to
+> `HA_MISSING_ENTRY_ATTEMPTS` times, then reported and the deploy continues (a
 > fresh install, or a domain rename, has nothing to verify); a listing that could
 > **not** be read (HTTP error, timeout, non-list body) is neither absence nor
 > failure, so it keeps waiting and then fails the deploy — treating it as absence
