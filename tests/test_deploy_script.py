@@ -353,6 +353,23 @@ class TestRestartWaitsForTheIntegrationToLoad:
 
         assert "no smartsolar_ha config entry found" not in capsys.readouterr().out
 
+    def test_a_mostly_unreadable_listing_is_not_reported_as_absent(self, monkeypatch, capsys):
+        monkeypatch.setattr(deploy_to_ha, "HA_READY_ATTEMPTS", 4)
+        self._serve(
+            monkeypatch,
+            [
+                urllib.error.URLError("timed out"),
+                urllib.error.URLError("timed out"),
+                [],
+                urllib.error.URLError("timed out"),
+            ],
+        )
+
+        with pytest.raises(RuntimeError, match="never reached 'loaded'"):
+            deploy_to_ha.restart_ha(FakeSSH(), {"HA_TOKEN": "token"})
+
+        assert "no smartsolar_ha config entry found" not in capsys.readouterr().out
+
 
 class TestUploadScript:
     def test_reports_a_missing_password_instead_of_raising(self, monkeypatch, capsys):

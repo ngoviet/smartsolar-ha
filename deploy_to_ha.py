@@ -313,8 +313,11 @@ def _wait_for_integration(token: str) -> None:
             f"{HA_URL}/api/config/config_entries/entry within {HA_READY_ATTEMPTS * HA_READY_INTERVAL}s"
         )
     if not seen_domain:
-        print(f"  no {INTEGRATION_DOMAIN} config entry found; nothing to verify")
-        return
+        raise RuntimeError(
+            f"the {INTEGRATION_DOMAIN} config entry never reached 'loaded' within "
+            f"{HA_READY_ATTEMPTS * HA_READY_INTERVAL}s; the readable config-entry "
+            f"listings did not contain the domain"
+        )
     raise RuntimeError(
         f"the {INTEGRATION_DOMAIN} config entry stayed '{state or 'unknown'}' "
         f"for {HA_READY_ATTEMPTS * HA_READY_INTERVAL}s"

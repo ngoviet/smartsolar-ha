@@ -139,7 +139,7 @@ name.
   "N passed" shield. The static figure had already gone stale twice — it read
   366 while the tree had 551, and 555 while the tree had 553 — so the badge now
   reports the CI run itself rather than a number someone has to remember to
-  update. (The suite reports 559 passed, 1 skipped.)
+  update. (The suite reports 561 passed, 1 skipped.)
 - Also in this release: the deploy-extra review pass (the `pyproject.toml`
   `deploy` extra is pinned precisely and its coverage is a behavioural import
   test instead of source parsing), and the domain-migration guidance in
