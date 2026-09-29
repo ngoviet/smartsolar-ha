@@ -183,13 +183,10 @@ config-entry keys are identical to v2.0.3 and an existing entry keeps working.
 This release publishes the three commits that landed after the v2.0.3 tag, so the
 tag matches `main` exactly.
 
-- **`prune_remote()` now works on the host.** It asked for
-  `find … -printf '%P\n'`, which HAOS's BusyBox `find` rejects; the error was
-  swallowed by `|| true`, the empty listing read as "the host matches the
-  repository", and pruning removed nothing — so stale files accumulated while the
-  deploy printed `0 stale file(s) removed`. It now runs plain
-  `find <dir> -type f`, trims the prefix locally, and treats an empty listing as
-  an error. Verified live: the next deploy removed the two files this release
+- **`prune_remote()` now works on the host.** The old `find … -printf '%P\n'`
+  is rejected by HAOS's BusyBox `find`, and `|| true` hid the failure, so pruning
+  silently removed nothing; the durable invariant is under "Deploying to HA"
+  below. Verified live: the next deploy removed the two files this release
   deletes from the host.
 - **The repository dropped dead weight.** The unused root `logo.png`, the inner
   `custom_components/smartsolar_ha/.gitignore` and
@@ -197,8 +194,9 @@ tag matches `main` exactly.
   on every deploy although Home Assistant never reads them); `.gitignore` lost
   the rules inherited from the parent repository for files that do not exist
   here.
-- Docs: the README was rewritten for the current state and no longer carries a
-  Changelog (release notes live in GitHub Releases, audit tables here).
+- Docs: the brand-image note in this file and `KNOWLEDGE.md`'s file table were
+  refreshed for the cleanup; release notes live in GitHub Releases, audit tables
+  here.
 
 ## v2.0.3 — Deploy/Verify Tooling (2026-09-28)
 
@@ -257,9 +255,9 @@ named the old repository.
   instead of source parsing.
 
 > The v2.0.1 section below records that audit's own numbers (tests 366 → 551).
-> The suite has grown since — the deploy-extra pass, the deploy-readiness waits
-> and the verifier's settle wait — which is why the current tree reports 567
-> passed.
+> The suite has grown since — the deploy-extra pass, the deploy-readiness waits,
+> the verifier's settle wait and the BusyBox `find` regression tests — so the
+> current tree reports more tests than that audit.
 
 ## v2.0.1 — Second Audit (2026-09-27)
 

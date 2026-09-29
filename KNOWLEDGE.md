@@ -29,7 +29,7 @@
 > đổi tên `smartsolar-ha` → `smartsolar_ha` (slug repo nay khớp domain), mọi link/badge và
 > `documentation`/`issue_tracker` trong manifest trỏ URL mới; badge test trong README
 > chuyển sang badge động của CI thay vì số cứng (số cứng đã lệch hai lần: ghi 366 khi
-> cây có 551, rồi ghi 555 khi cây có 553; suite hiện tại: `567 passed, 1 skipped`).
+> cây có 551, rồi ghi 555 khi cây có 553; số test hiện tại lấy từ badge CI trong README).
 > Domain, tên entity, `unique_id`, service và config entry **không đổi** — không cần thêm lại.
 >
 > 📌 **v2.0.3 (2026-09-28)** — vẫn **không đổi code integration** (không module nào trong
@@ -42,7 +42,7 @@
 > Ngoài ra extra `[test]` pin `homeassistant==2026.9.4` — đúng bản HA đang chạy thật —
 > và README được viết lại (bỏ mục Changelog, release notes nằm ở GitHub Releases).
 >
-> 📌 **v2.0.1 (27 bug đã fix, test 366 → 551 lúc audit; cây hiện tại 567)** — bảng audit đầy đủ nằm ở
+> 📌 **v2.0.1 (27 bug đã fix, test 366 → 551 lúc audit)** — bảng audit đầy đủ nằm ở
 > [`CLAUDE.md`](CLAUDE.md). Các thay đổi hành vi cần biết khi đọc tài liệu này:
 > - Poll REST lỗi **không còn** làm entity `unavailable` khi MQTT vẫn đang có dữ liệu
 >   sống; entity `Update Frequency` luôn available.
@@ -1202,7 +1202,7 @@ Linting: ruff
 | `deploy_to_ha.py` | **Deploy có gate**: ruff + format + mypy + pytest → backup → upload → prune → restart → chờ API **và** config entry báo `loaded` |
 | `verify_live.py` | Assert entity trên HA thật sau deploy |
 | `upload_to_ha.py` | Uploader tối giản (không gate) |
-| `tests/` | 567 test, gồm `test_e2e.py` chạy entry thật trên HA core thật |
+| `tests/` | Các test (số lượng lấy từ badge CI trong README), gồm `test_e2e.py` chạy entry thật trên HA core thật |
 | `_local_archive/deployed/` | Backup bản đã deploy trên HA (local-only, gitignored) |
 | `.venv/` | Python 3.14 — HA 2026.x yêu cầu `>= 3.14.2` |
 
