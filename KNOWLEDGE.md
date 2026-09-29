@@ -1197,7 +1197,7 @@ Linting: ruff
 | `deploy_to_ha.py` | **Deploy có gate**: ruff + format + mypy + pytest → backup → upload → restart → chờ API |
 | `verify_live.py` | Assert entity trên HA thật sau deploy |
 | `upload_to_ha.py` | Uploader tối giản (không gate) |
-| `tests/` | 261 test, gồm `test_e2e.py` chạy entry thật trên HA core thật |
+| `tests/` | 567 test, gồm `test_e2e.py` chạy entry thật trên HA core thật |
 | `_local_archive/deployed/` | Backup bản đã deploy trên HA (local-only, gitignored) |
 | `.venv/` | Python 3.14 — HA 2026.x yêu cầu `>= 3.14.2` |
 
