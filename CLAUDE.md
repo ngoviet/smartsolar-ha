@@ -185,11 +185,13 @@ named the old repository.
   hard-coded `N passed` shield. The static figure had gone stale twice — it read
   366 while the tree had 551, then 555 while the tree had 553 — so the badge now
   reports the CI run itself instead of a number that has to be remembered. The
-  suite reports **561 passed, 1 skipped**.
+  suite reports **567 passed, 1 skipped**.
 - Added after the release tag, still without touching integration code:
   `deploy_to_ha.py` now waits until this integration's config entry reports
-  `loaded` before it calls the deploy done, so `verify_live.py` can be chained
-  straight to it (it used to see **zero** entities); and the `[test]` extra pins
+  `loaded` before it calls the deploy done, and `verify_live.py` itself waits
+  (bounded, 12 polls × 5 s) for the entities it asserts on — because Home
+  Assistant writes entity states asynchronously, so `loaded` alone is not enough
+  to chain a verification to a deploy; and the `[test]` extra pins
   `homeassistant==2026.9.4` — the version the live instance actually runs — so
   the gate stops testing an older Home Assistant than production.
 - Carried over from the deploy-extra review pass (already on `main`): the
@@ -197,8 +199,8 @@ named the old repository.
   instead of source parsing.
 
 > The v2.0.1 section below records that audit's own numbers (tests 366 → 551).
-> The suite has grown since — the deploy-extra pass changed it by +2 net and the
-> deploy-readiness waits added 8 — which is why the current tree reports 561
+> The suite has grown since — the deploy-extra pass, the deploy-readiness waits
+> and the verifier's settle wait — which is why the current tree reports 567
 > passed.
 
 ## v2.0.1 — Second Audit (2026-09-27)
@@ -433,6 +435,16 @@ cd d:/code/smartsolar_ha
 > **not** be read (HTTP error, timeout, non-list body) is neither absence nor
 > failure, so it keeps waiting and then fails the deploy — treating it as absence
 > would report success without ever having seen `loaded`.
+>
+> ℹ️ **A `loaded` entry is still not the last word.** Home Assistant writes entity
+> states asynchronously *after* the entry loads, so a verifier chained right after
+> the deploy read a half-filled state machine: 12 of the 38 entities at the moment
+> `loaded` was printed, the rest appearing within ~10-20 s (measured 2026-09-28).
+> `verify_live.py` therefore waits — bounded to `SETTLE_ATTEMPTS` ×
+> `SETTLE_INTERVAL` (12 × 5 s) — until every entity it asserts on exists, then
+> reports the ones that never appear. The chain is verified live: the deploy
+> printed `smartsolar_ha is loaded` and the immediately chained verification
+> exited 0.
 
 > ⚠️ **Changing the domain breaks the deployed config entry.** Home Assistant
 > resolves an entry by its `domain`, so an entry stored for `smartsolar_mppt`
