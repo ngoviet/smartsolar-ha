@@ -1,6 +1,6 @@
 # SmartSolar MPPT MQ — Toàn Bộ Kiến Thức API & Tích Hợp
 
-> **Trạng thái**: ✅ LIVE · **Phiên bản**: **v2.0.3** (2026-09-28) · **Nguồn sự thật**: [../STATUS.md](../STATUS.md) · **Cập nhật**: 2026-09-28
+> **Trạng thái**: ✅ LIVE · **Phiên bản**: **v2.0.4** (2026-09-28) · **Nguồn sự thật**: [../STATUS.md](../STATUS.md) · **Cập nhật**: 2026-09-28
 >
 > ⚠️ **v2.0.0 đổi domain `smartsolar_mppt` → `smartsolar_ha`** (thư mục, `manifest.domain`,
 > import, tên service, đường dẫn deploy). HA xác định integration theo **tên thư mục** phải
@@ -18,6 +18,12 @@
 >
 > ⚠️ Nội dung tổng hợp **2026-06-22**, đã bổ sung mục [7.4 — audit v1.5.1](#74-đã-fix-trong-v151-2026-09-27--audit-toàn-diện).
 > Đối chiếu lại entity thực tế nếu có sai lệch.
+>
+> 📌 **v2.0.4 (2026-09-28)** — **không đổi code integration**, chỉ gộp 3 commit sau tag
+> v2.0.3 để tag khớp `main`: sửa `prune_remote()` chạy được trên BusyBox `find` của HAOS
+> (trước đây lệnh `find -printf` fail, bị `|| true` che nên **chưa từng xoá file rác trên
+> host**), xoá file thừa (`logo.png` gốc, `.gitignore` bên trong integration,
+> `example_configuration.yaml`) và dọn `.gitignore`.
 >
 > 📌 **v2.0.2 (2026-09-28)** — chỉ đổi metadata, **không đổi code**: repository GitHub
 > đổi tên `smartsolar-ha` → `smartsolar_ha` (slug repo nay khớp domain), mọi link/badge và
