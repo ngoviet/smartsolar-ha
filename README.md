@@ -26,7 +26,7 @@ whichever source is available.
 | **Real-time via MQTT** | Live values arrive over WebSocket Secure; sensors update without waiting for the next poll |
 | **REST polling as the base** | The cloud API fills in what MQTT does not carry, such as the project-level totals |
 | **Survives either outage** | If the poll fails, entities fed by MQTT stay available — and the other way round |
-| **Daily statistics** | Peak power, average power and production hours for today, per device and aggregated |
+| **Daily statistics** | Peak power, average power and production hours for today, tracked per device |
 | **Project or device mode** | Aggregate several controllers into one dashboard, or monitor a single one |
 | **Devices and entity naming pinned** | `PV1`/`PV2` follow the numerically sorted device GUIDs, so entity IDs do not shuffle between restarts |
 | **Adjustable polling** | `Update Frequency` number entity, 1–30 s, no YAML editing |
@@ -97,7 +97,7 @@ rejected instead of being written and breaking a working entry.
 | `username`, `password` | SmartSolar account credentials (password is redacted in diagnostics) |
 | `mode` | `device` or `project` |
 | `device_type` | Device type used by the project-by-devices API call |
-| `chipset_ids` | Device mode: exactly one Chipset ID. Project by devices: the monitored GUIDs. Project by ID: empty, filled from the API response |
+| `chipset_ids` | Device mode: exactly one Chipset ID. Project by devices: the monitored GUIDs. Project by ID: absent — the device list is discovered from the API response at runtime (legacy entries may carry an empty list) |
 | `project_id` | Project mode by ID only |
 | `update_interval` | Poll interval in seconds, 1–30 (clamped on load, editable later from the number entity) |
 
@@ -128,8 +128,9 @@ down is exactly what you may want then.
 | Avg Power Today | W | Mean of today's samples (not time-weighted — see limitations) |
 | Production Hours Today | h | Hours today above ~5 W |
 
-In project mode you get a set per device (`…pv1…`, `…pv2…`) plus the project
-totals; in device mode you get one set.
+In project mode you get 13 sensors per device (`…pv1…`, `…pv2…`) plus the 10
+project-total live-metric sensors; the daily statistics exist per device only,
+with no project-level aggregate. In device mode you get one set of 13.
 
 Entity IDs are derived by Home Assistant from the device name, so they look like
 `sensor.<device_slug>_pv1_pv_voltage`. Unique IDs are
