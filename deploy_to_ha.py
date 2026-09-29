@@ -39,9 +39,13 @@ INTEGRATION_DOMAIN = SRC_DIR.name
 
 # Home Assistant answers on the REST API before its integration platforms are
 # added, so "the API replied" does not mean "the deployment is live". Both waits
-# poll every 5 s, with the same 300 s ceiling the restart already had.
+# poll every HA_READY_INTERVAL s and may block up to HA_FETCH_TIMEOUT s on each
+# fetch, so the worst case before they give up is
+# HA_READY_ATTEMPTS * (HA_READY_INTERVAL + HA_FETCH_TIMEOUT) s.
 HA_READY_INTERVAL = 5
 HA_READY_ATTEMPTS = 60
+HA_FETCH_TIMEOUT = 10
+HA_READY_SECONDS = HA_READY_ATTEMPTS * (HA_READY_INTERVAL + HA_FETCH_TIMEOUT)
 
 # A config entry is listed nearly as soon as the API answers. If this domain's
 # entry is still missing after this many polls there is no entry for it at all
@@ -215,7 +219,7 @@ def _fetch_json(url: str, token: str) -> object:
     import urllib.request
 
     request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
-    with urllib.request.urlopen(request, timeout=10) as response:
+    with urllib.request.urlopen(request, timeout=HA_FETCH_TIMEOUT) as response:
         if response.status != 200:
             return None
         return json.loads(response.read())
@@ -252,7 +256,7 @@ def _wait_for_api(token: str) -> None:
         if isinstance(info, dict):
             print(f"  HA is back: {info.get('version')}")
             return
-    raise RuntimeError(f"HA did not come back within {HA_READY_ATTEMPTS * HA_READY_INTERVAL}s")
+    raise RuntimeError(f"HA did not come back within {HA_READY_SECONDS}s")
 
 
 def _wait_for_integration(token: str) -> None:
@@ -310,17 +314,17 @@ def _wait_for_integration(token: str) -> None:
     if not read_listing:
         raise RuntimeError(
             f"could not read the {INTEGRATION_DOMAIN} config-entry listing from "
-            f"{HA_URL}/api/config/config_entries/entry within {HA_READY_ATTEMPTS * HA_READY_INTERVAL}s"
+            f"{HA_URL}/api/config/config_entries/entry within {HA_READY_SECONDS}s"
         )
     if not seen_domain:
         raise RuntimeError(
             f"the {INTEGRATION_DOMAIN} config entry never reached 'loaded' within "
-            f"{HA_READY_ATTEMPTS * HA_READY_INTERVAL}s; the readable config-entry "
+            f"{HA_READY_SECONDS}s; the readable config-entry "
             f"listings did not contain the domain"
         )
     raise RuntimeError(
         f"the {INTEGRATION_DOMAIN} config entry stayed '{state or 'unknown'}' "
-        f"for {HA_READY_ATTEMPTS * HA_READY_INTERVAL}s"
+        f"for {HA_READY_SECONDS}s"
     )
 
 
