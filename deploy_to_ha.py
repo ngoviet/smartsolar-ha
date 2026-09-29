@@ -190,22 +190,42 @@ def upload_tree(ssh: paramiko.SSHClient) -> int:
     return len(files)
 
 
+def _remote_file_listing(ssh: paramiko.SSHClient) -> list[str]:
+    """List the integration's files on the host, relative to ``REMOTE_DIR``.
+
+    Home Assistant OS ships BusyBox's ``find``, which does **not** support
+    ``-printf``; the original command failed there, its ``|| true`` swallowed the
+    error, and an empty listing meant "nothing is stale" — so pruning silently
+    did nothing at all on a real host. The absolute paths BusyBox prints are
+    trimmed here instead, and the command is deliberately not wrapped in
+    ``|| true``: a listing that cannot be read must fail the deploy rather than
+    pretend the host matches the repository.
+    """
+    listing = run(ssh, f"sudo find {REMOTE_DIR} -type f")
+    prefix = f"{REMOTE_DIR}/"
+    entries = [line.strip() for line in listing.splitlines() if line.strip()]
+    return [entry[len(prefix) :] if entry.startswith(prefix) else entry for entry in entries]
+
+
 def prune_remote(ssh: paramiko.SSHClient) -> int:
     """Delete files on the host that no longer exist locally.
 
     Uploading only ever adds files, so a module deleted or renamed in the repo
     stayed on the host forever. That is not merely untidy: a leftover module
-    keeps being importable (and a leftover ``.py`` next to a renamed one
-    shadows nothing but still ships stale code into the running integration).
-    Only files inside this integration's own folder are considered, so nothing
-    outside ``custom_components/smartsolar_ha`` can be touched.
+    keeps being importable (a stale ``example_configuration.yaml`` or
+    ``.gitignore`` is harmless, a stale ``.py`` is not). Only files inside this
+    integration's own folder are considered, so nothing outside
+    ``custom_components/smartsolar_ha`` can be touched.
     """
     wanted = {p.relative_to(SRC_DIR).as_posix() for p in _local_file_list()}
-    listing = run(ssh, f"sudo find {REMOTE_DIR} -type f -printf '%P\\n' 2>/dev/null || true")
+    listing = _remote_file_listing(ssh)
+    if not listing:
+        raise RuntimeError(
+            f"the host listing of {REMOTE_DIR} came back empty although {len(wanted)} files "
+            "were just uploaded; refusing to report a clean prune without a readable listing"
+        )
     stale = [
-        rel
-        for rel in (line.strip() for line in listing.splitlines())
-        if rel and rel not in wanted and not rel.endswith(".pyc") and "__pycache__" not in rel.split("/")
+        rel for rel in listing if rel not in wanted and not rel.endswith(".pyc") and "__pycache__" not in rel.split("/")
     ]
     for rel in stale:
         run(ssh, f"sudo rm -f {REMOTE_DIR}/{rel}")
