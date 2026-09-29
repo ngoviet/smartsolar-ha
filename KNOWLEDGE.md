@@ -1192,9 +1192,8 @@ Linting: ruff
 | `CLAUDE.md` | Hướng dẫn cho AI agents |
 | `README.md` | README chuyên nghiệp |
 | `KNOWLEDGE.md` | File này — kiến thức tổng hợp |
-| `logo.png` | Logo integration |
 | `pyproject.toml` | Cấu hình ruff / mypy / pytest + extra `[test]` (ghim `homeassistant`) |
-| `deploy_to_ha.py` | **Deploy có gate**: ruff + format + mypy + pytest → backup → upload → restart → chờ API |
+| `deploy_to_ha.py` | **Deploy có gate**: ruff + format + mypy + pytest → backup → upload → prune → restart → chờ API **và** config entry báo `loaded` |
 | `verify_live.py` | Assert entity trên HA thật sau deploy |
 | `upload_to_ha.py` | Uploader tối giản (không gate) |
 | `tests/` | 567 test, gồm `test_e2e.py` chạy entry thật trên HA core thật |
