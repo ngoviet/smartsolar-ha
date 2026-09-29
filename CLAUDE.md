@@ -166,6 +166,30 @@ Sensors in `const.UNRELIABLE_SYNTHESIS_SENSORS` (charge_power, currents,
 signal_quality) always aggregate locally because the server's
 `synthesisStreams` value is frequently stale or absent.
 
+## v2.0.3 — Deploy/Verify Tooling (2026-09-28)
+
+No integration code changed — no module under `custom_components/smartsolar_ha/`
+was touched, so the domain, entity names, `unique_id`s, services and
+config-entry keys are identical to v2.0.2 and an existing entry keeps working.
+This release publishes the tooling that makes deploying and verifying the
+integration trustworthy, all of it found by deploying v2.0.2 for real:
+
+- `deploy_to_ha.py` waits for the REST API **and** for the config entry named by
+  the integration folder to report `loaded`, keeping three outcomes apart
+  (loaded / stuck / read-but-absent vs unreadable). The short version: it can no
+  longer report success without having seen `loaded`, and an unreadable listing
+  is not mistaken for an absent entry. Full semantics are in "Deploying to HA"
+  below.
+- `verify_live.py` waits (bounded, 12 × 5 s) for the state machine to settle
+  before judging, because Home Assistant writes entity states asynchronously
+  after the entry loads: 12 of the 38 entities existed at the moment `loaded` was
+  printed and the rest arrived within ~10-20 s.
+- The `[test]` extra pins `homeassistant==2026.9.4`, the version the live
+  instance runs, instead of trailing it; the suite is **567 passed, 1 skipped**.
+- Docs: the README test badge is the CI workflow badge rather than a hard-coded
+  count, and the v2.0.2 notes no longer claim a CI test-count difference that
+  does not exist (at that revision CI and a local run both reported 553 passed).
+
 ## v2.0.2 — Repository Rename (2026-09-28)
 
 No integration code changed: the domain, entity names, `unique_id`s, services
