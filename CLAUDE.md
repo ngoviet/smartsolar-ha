@@ -3,7 +3,7 @@
 > **System info**: [../System_info/CLAUDE.md](../System_info/CLAUDE.md) — HA at 192.168.10.15, network, credentials
 > **Code search**: `semble search "query" .` — intent-based, ~98% fewer tokens than grep
 
-Home Assistant custom integration for SmartSolar MPPT solar charge controllers. Fetches real-time metrics via HTTP API from `api.smartsolar.io.vn` and MQTT WebSocket Secure from `mqttx.smartsolar.io.vn:8084`. **Current version: v2.0.3**. Verified live against HA **2026.9.4** on 2026-09-28 (v2.0.3 tree; the test extra pins that same version).
+Home Assistant custom integration for SmartSolar MPPT solar charge controllers. Fetches real-time metrics via HTTP API from `api.smartsolar.io.vn` and MQTT WebSocket Secure from `mqttx.smartsolar.io.vn:8084`. **Current version: v2.0.4**. Verified live against HA **2026.9.4** on 2026-09-28 (v2.0.4 tree; the test extra pins that same version).
 
 > ⚠️ **v2.0.0 renamed the domain from `smartsolar_mppt` to `smartsolar_ha`.**
 > Home Assistant identifies an integration by its folder name, which must equal
@@ -19,7 +19,7 @@ Home Assistant custom integration for SmartSolar MPPT solar charge controllers. 
 ```
 custom_components/smartsolar_ha/
 ├── __init__.py          # Integration entry point, setup/unload, service registration, async_migrate_entry
-├── manifest.json        # v2.0.3, domain=smartsolar_ha, config_flow=true
+├── manifest.json        # v2.0.4, domain=smartsolar_ha, config_flow=true
 ├── const.py             # Constants, SENSOR_TYPES, AGGREGATION, MQTT config, build_device_info helper
 ├── helpers.py           # Pure helpers: coerce_float, device_logs, as_list, stream_dict, guid_sort_key
 ├── config_flow.py       # Multi-step config flow: auth → mode → device/project, reauth, reconfigure
@@ -174,6 +174,31 @@ both chargers sit on the same 24 V bus, so summing reports ~53 V:
 Sensors in `const.UNRELIABLE_SYNTHESIS_SENSORS` (charge_power, currents,
 signal_quality) always aggregate locally because the server's
 `synthesisStreams` value is frequently stale or absent.
+
+## v2.0.4 — Repository Hygiene + Deploy Fix (2026-09-28)
+
+No integration code changed: no module under `custom_components/smartsolar_ha/`
+was touched, so the domain, entity names, `unique_id`s, services and
+config-entry keys are identical to v2.0.3 and an existing entry keeps working.
+This release publishes the three commits that landed after the v2.0.3 tag, so the
+tag matches `main` exactly.
+
+- **`prune_remote()` now works on the host.** It asked for
+  `find … -printf '%P\n'`, which HAOS's BusyBox `find` rejects; the error was
+  swallowed by `|| true`, the empty listing read as "the host matches the
+  repository", and pruning removed nothing — so stale files accumulated while the
+  deploy printed `0 stale file(s) removed`. It now runs plain
+  `find <dir> -type f`, trims the prefix locally, and treats an empty listing as
+  an error. Verified live: the next deploy removed the two files this release
+  deletes from the host.
+- **The repository dropped dead weight.** The unused root `logo.png`, the inner
+  `custom_components/smartsolar_ha/.gitignore` and
+  `example_configuration.yaml` are gone (the last two were uploaded to the host
+  on every deploy although Home Assistant never reads them); `.gitignore` lost
+  the rules inherited from the parent repository for files that do not exist
+  here.
+- Docs: the README was rewritten for the current state and no longer carries a
+  Changelog (release notes live in GitHub Releases, audit tables here).
 
 ## v2.0.3 — Deploy/Verify Tooling (2026-09-28)
 

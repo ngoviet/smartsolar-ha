@@ -13,7 +13,7 @@ DOMAIN = "smartsolar_ha"
 _LOGGER = logging.getLogger(__name__)
 
 # Integration release version — keep in sync with manifest.json / pyproject.toml
-VERSION = "2.0.3"
+VERSION = "2.0.4"
 
 # Child loggers so users can silence just the noisy parts:
 #   logger:
