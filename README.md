@@ -15,7 +15,7 @@ exposes them as Home Assistant sensors, and keeps the values flowing from
 whichever source is available.
 
 - **Current version:** v2.0.3 — verified live against **HA 2026.9.4** (2026-09-28)
-- **Test suite:** 567 passed, 1 skipped (ruff, format, mypy and pytest are hard gates in CI)
+- **Test suite:** the CI badge above is always current — ruff, format, mypy and pytest are hard gates, run with the `[test]` extra against the pinned Home Assistant version
 
 ---
 
@@ -298,7 +298,7 @@ custom_components/smartsolar_ha/
 ├── diagnostics.py     Config entry diagnostics (secrets redacted)
 ├── brand/             Local icon/logo served by Home Assistant
 └── translations/      en.json, vi.json
-tests/                 Unit, script and end-to-end tests (567 passed, 1 skipped)
+tests/                 Unit, script and end-to-end tests (see the CI badge for the current count)
 ```
 
 `CLAUDE.md` documents the architecture decisions and every audit fix in detail;
