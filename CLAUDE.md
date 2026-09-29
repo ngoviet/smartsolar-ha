@@ -3,7 +3,7 @@
 > **System info**: [../System_info/CLAUDE.md](../System_info/CLAUDE.md) — HA at 192.168.10.15, network, credentials
 > **Code search**: `semble search "query" .` — intent-based, ~98% fewer tokens than grep
 
-Home Assistant custom integration for SmartSolar MPPT solar charge controllers. Fetches real-time metrics via HTTP API from `api.smartsolar.io.vn` and MQTT WebSocket Secure from `mqttx.smartsolar.io.vn:8084`. **Current version: v2.0.2**. Verified live against HA **2026.9.4** on 2026-09-28 (v2.0.2 tree; the test extra pins that same version).
+Home Assistant custom integration for SmartSolar MPPT solar charge controllers. Fetches real-time metrics via HTTP API from `api.smartsolar.io.vn` and MQTT WebSocket Secure from `mqttx.smartsolar.io.vn:8084`. **Current version: v2.0.3**. Verified live against HA **2026.9.4** on 2026-09-28 (v2.0.3 tree; the test extra pins that same version).
 
 > ⚠️ **v2.0.0 renamed the domain from `smartsolar_mppt` to `smartsolar_ha`.**
 > Home Assistant identifies an integration by its folder name, which must equal
@@ -19,7 +19,7 @@ Home Assistant custom integration for SmartSolar MPPT solar charge controllers. 
 ```
 custom_components/smartsolar_ha/
 ├── __init__.py          # Integration entry point, setup/unload, service registration, async_migrate_entry
-├── manifest.json        # v2.0.2, domain=smartsolar_ha, config_flow=true
+├── manifest.json        # v2.0.3, domain=smartsolar_ha, config_flow=true
 ├── const.py             # Constants, SENSOR_TYPES, AGGREGATION, MQTT config, build_device_info helper
 ├── helpers.py           # Pure helpers: coerce_float, device_logs, as_list, stream_dict, guid_sort_key
 ├── config_flow.py       # Multi-step config flow: auth → mode → device/project, reauth, reconfigure
