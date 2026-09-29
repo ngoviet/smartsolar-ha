@@ -24,7 +24,7 @@ whichever source is available.
 | | |
 |---|---|
 | **Real-time via MQTT** | Live values arrive over WebSocket Secure; sensors update without waiting for the next poll |
-| **REST polling as the base** | The cloud API fills in everything MQTT does not carry (daily/total energy, projections) |
+| **REST polling as the base** | The cloud API fills in what MQTT does not carry, such as the project-level totals |
 | **Survives either outage** | If the poll fails, entities fed by MQTT stay available — and the other way round |
 | **Daily statistics** | Peak power, average power and production hours for today, per device and aggregated |
 | **Project or device mode** | Aggregate several controllers into one dashboard, or monitor a single one |
@@ -119,13 +119,13 @@ down is exactly what you may want then.
 | Battery Voltage | V | MQTT + REST |
 | Battery Current | A | MQTT + REST |
 | Charge Power | W | MQTT + REST |
-| Today Energy | kWh | REST (`total_increasing`, resets at midnight) |
-| Total Energy | kWh | REST (`total_increasing`) |
+| Today Energy | kWh | MQTT + REST (`total_increasing`, resets at midnight) |
+| Total Energy | kWh | MQTT + REST (`total_increasing`) |
 | Temperature | °C | MQTT + REST |
-| Status | — | Mapped from the numeric code (Online / Charging / Idle / Fault) |
+| Status | — | MQTT + REST, mapped from the numeric code (Online / Charging / Idle (No Sun) / Fault) |
 | WiFi Signal | % | MQTT, or the REST `signalQuality` field |
 | Peak Power Today | W | Computed by the coordinator from today's samples |
-| Average Power Today | W | Mean of today's samples (not time-weighted — see limitations) |
+| Avg Power Today | W | Mean of today's samples (not time-weighted — see limitations) |
 | Production Hours Today | h | Hours today above ~5 W |
 
 In project mode you get a set per device (`…pv1…`, `…pv2…`) plus the project
@@ -215,7 +215,7 @@ These are choices, not bugs — each is covered by tests:
   sensors are labelled `PV1`, `PV2`, … from the numerically sorted GUIDs, so
   inserting a device with a lower GUID would renumber existing entity IDs and
   break dashboards. Restart Home Assistant after adding a controller.
-- **`Average Power Today` is a sample mean**, not a time-weighted average: MQTT
+- **`Avg Power Today` is a sample mean**, not a time-weighted average: MQTT
   publishes at roughly 2 Hz and each poll adds one more sample.
 - **`WiFi Signal` stays `unknown` for some firmware.** The 40A unit in the
   reference installation never reports `signalQuality` (the API returns `null`
