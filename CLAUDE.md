@@ -39,8 +39,17 @@ custom_components/smartsolar_ha/
 > `custom_components/<domain>/brand/` (`loader.Integration.has_branding` checks
 > that FOLDER). There is no `brand` key in the manifest schema — HA ignores one,
 > so a manifest `brand` block only ever looks like branding that is configured.
-> `.gitignore` re-includes `brand/logo.png` because the global `logo.png` rule
-> would otherwise hide it from git.
+> Those three PNGs are the only copies in the repository.
+>
+> ℹ️ **The integration folder ships only what Home Assistant loads** (plus
+> `brand/`). It no longer contains an inner `.gitignore` or an
+> `example_configuration.yaml`: `deploy_to_ha.py` uploads every file in that
+> folder, so both were being copied to the host for nothing, and the example YAML
+> described a `configuration.yaml` platform that does not exist (the integration
+> is config-flow only). The unused root `logo.png` was dropped at the same time,
+> and `.gitignore` lost the dead rules that had accumulated from the parent
+> repository (for files that do not exist here, plus a `logo.png` rule whose
+> `!brand/logo.png` exception is now unnecessary).
 
 Root-level files:
 ```

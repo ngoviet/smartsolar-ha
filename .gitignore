@@ -20,60 +20,35 @@ wheels/
 .installed.cfg
 *.egg
 
-# IDE
+# IDE / OS
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# OS
 .DS_Store
 Thumbs.db
 
 # Logs
 *.log
 
-# Temporary directories
-temp_brands/
-brands_prep/
-
-# Exclude unnecessary files from repository
-Generated Image*.png
-KEYWORDS.md
-logo.png
-logo2.png
-*.psd
-custom_components/smartsolar_ha/ICON_README.md
-CHANGELOG.md
-
-# ...but Home Assistant serves the integration's own brand images from
-# custom_components/<domain>/brand/ (see loader.Integration.has_branding), so the
-# `logo.png` rule above must not hide them. Manifest keys do NOT control this:
-# the folder's presence is what counts.
-!custom_components/smartsolar_ha/brand/icon.png
-!custom_components/smartsolar_ha/brand/icon@2x.png
-!custom_components/smartsolar_ha/brand/logo.png
-
-# Wiki files (local only, not uploaded to GitHub)
-wiki/
-CLAUDE.md
-
 # Virtual environment used for the local test gate
 .venv/
 venv/
 
-# Test / coverage artifacts
+# Test, coverage and tool caches
 .coverage
 coverage.xml
 htmlcov/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-# Deploy backups written by deploy_to_ha.py (same rule as the parent repo)
+# Deploy backups written by deploy_to_ha.py (local only; the migration copies of
+# core.config_entries / core.entity_registry / core.device_registry live here too)
 _local_archive/
 
-# Local secrets — HA_PASS / HA_TOKEN live here (deploy_to_ha.py, verify_live.py).
-# This rule used to come from the parent HA-Config repository; standalone it
-# must live here, or `git add -A` would stage the credentials.
+# Local secrets — HA_PASS / HA_TOKEN and the SmartSolar credentials live here
+# (deploy_to_ha.py, upload_to_ha.py, verify_live.py).
 .env
 
 # Local AI/tooling state
