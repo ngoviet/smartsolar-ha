@@ -426,7 +426,7 @@ HA test harness either.
   report when a coordinator relies on the ContextVar
 
 ### Key Naming Conventions
-- Entity ID: `sensor.smartsolar_mppt_{prefix}_{type}` (e.g., `sensor.smartsolar_mppt_p_123_pv_voltage`)
+- Entity ID: derived by Home Assistant from the device name + entity name (e.g. `sensor.<device_slug>_pv1_pv_voltage`), **not** from the unique ID
 - Unique ID: `{entry_id}_{prefix}_{sensor_type}`
 - Config keys: `username`, `password`, `mode`, `device_type`, `chipset_ids`, `project_id`, `update_interval`
 - PV1/PV2 order = GUIDs sorted **numerically** (`547611` → PV1, `14756976` → PV2)
