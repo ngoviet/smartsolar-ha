@@ -120,18 +120,30 @@ class TestLocalGateMatchesCi:
 
 
 class TestPruneRemote:
-    """Uploading only ever adds files, so leftovers must be pruned explicitly."""
+    """Uploading only ever adds files, so leftovers must be pruned explicitly.
 
-    def test_removes_only_files_that_are_gone_locally(self):
-        listing = "\n".join(
-            [
-                *_local_relative_paths(),
-                "sensor_old.py",
-                "translations/legacy.json",
-                "__pycache__/sensor.cpython-314.pyc",
-                "module.pyc",
-            ]
-        )
+    The first implementation asked the host for ``find … -printf '%P\\n'``. Home
+    Assistant OS ships BusyBox's ``find``, which has no ``-printf``: the command
+    failed, the error was swallowed by ``|| true``, and the empty listing was
+    read as "the host matches the repository" — so pruning never removed anything
+    on a real host. These tests pin both the BusyBox-style absolute listing and
+    the refusal to report a clean prune from a listing that could not be read.
+    """
+
+    @staticmethod
+    def _absolute(paths: list[str]) -> str:
+        return "\n".join(f"{deploy_to_ha.REMOTE_DIR}/{path}" for path in paths)
+
+    @pytest.mark.parametrize("absolute", [True, False])
+    def test_removes_only_files_that_are_gone_locally(self, absolute):
+        paths = [
+            *_local_relative_paths(),
+            "sensor_old.py",
+            "translations/legacy.json",
+            "__pycache__/sensor.cpython-314.pyc",
+            "module.pyc",
+        ]
+        listing = self._absolute(paths) if absolute else "\n".join(paths)
         ssh = FakeSSH(find_listing=listing)
 
         removed = deploy_to_ha.prune_remote(ssh)
@@ -146,14 +158,24 @@ class TestPruneRemote:
         assert not any(cmd.endswith("module.pyc") for cmd in rm_commands)
 
     def test_no_op_when_the_host_matches_the_repository(self):
-        ssh = FakeSSH(find_listing="\n".join(_local_relative_paths()))
+        ssh = FakeSSH(find_listing=self._absolute(_local_relative_paths()))
 
         assert deploy_to_ha.prune_remote(ssh) == 0
         assert not [cmd for cmd in ssh.commands if cmd.startswith("sudo rm")]
 
-    def test_empty_listing_is_tolerated(self):
-        """``find`` prints nothing when the folder does not exist yet."""
-        assert deploy_to_ha.prune_remote(FakeSSH(find_listing="")) == 0
+    def test_the_listing_command_avoids_busybox_unsupported_flags(self):
+        ssh = FakeSSH(find_listing=self._absolute(_local_relative_paths()))
+
+        deploy_to_ha.prune_remote(ssh)
+
+        find_commands = [cmd for cmd in ssh.commands if cmd.startswith("sudo find")]
+        assert find_commands == [f"sudo find {deploy_to_ha.REMOTE_DIR} -type f"]
+        assert not any("|| true" in cmd for cmd in find_commands)
+
+    def test_an_unreadable_listing_fails_instead_of_pruning_nothing(self):
+        """An empty listing used to be read as "nothing is stale"."""
+        with pytest.raises(RuntimeError, match="came back empty"):
+            deploy_to_ha.prune_remote(FakeSSH(find_listing=""))
 
 
 class TestArchiveRemote:

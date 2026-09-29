@@ -479,6 +479,15 @@ cd d:/code/smartsolar_ha
 > reports the ones that never appear. The chain is verified live: the deploy
 > printed `smartsolar_ha is loaded` and the immediately chained verification
 > exited 0.
+>
+> ⚠️ **The host's `find` is BusyBox's.** `prune_remote()` used to ask for
+> `find … -printf '%P\n'`, which BusyBox rejects; the error was swallowed by
+> `|| true`, so the empty listing was read as "the host matches the repository"
+> and **pruning never removed anything on a real host** — stale files (an inner
+> `.gitignore`, `example_configuration.yaml`, modules deleted long ago)
+> accumulated silently while the deploy printed `0 stale file(s) removed`. It now
+> runs plain `find <dir> -type f`, trims the absolute prefix locally, and treats
+> an empty listing as an error instead of a clean result.
 
 > ⚠️ **Changing the domain breaks the deployed config entry.** Home Assistant
 > resolves an entry by its `domain`, so an entry stored for `smartsolar_mppt`
