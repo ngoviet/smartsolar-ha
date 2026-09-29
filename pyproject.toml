@@ -50,7 +50,7 @@ dev = [
 # `homeassistant` must match the target HA version because the integration is
 # developed against HA internals (DataUpdateCoordinator, registries, ...).
 # It is pinned to the version the live instance runs (2026.9.4); a pin that
-# trails the deployment tests against code Home Assistant no longer executes.
+# trails it would test against Home Assistant code no longer in production.
 # Home Assistant 2026.x requires Python >= 3.14.2.
 test = [
     "homeassistant==2026.9.4",

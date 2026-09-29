@@ -322,10 +322,7 @@ def _wait_for_integration(token: str) -> None:
             f"{HA_READY_SECONDS}s; the readable config-entry "
             f"listings did not contain the domain"
         )
-    raise RuntimeError(
-        f"the {INTEGRATION_DOMAIN} config entry stayed '{state or 'unknown'}' "
-        f"for {HA_READY_SECONDS}s"
-    )
+    raise RuntimeError(f"the {INTEGRATION_DOMAIN} config entry stayed '{state or 'unknown'}' for {HA_READY_SECONDS}s")
 
 
 def restart_ha(ssh: paramiko.SSHClient, env: dict[str, str]) -> None:
