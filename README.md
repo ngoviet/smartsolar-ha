@@ -14,7 +14,7 @@ live metrics from the SmartSolar cloud API and from the SmartSolar MQTT broker,
 exposes them as Home Assistant sensors, and keeps the values flowing from
 whichever source is available.
 
-- **Current version:** v2.0.4 — verified live against **HA 2026.9.4** (2026-09-28)
+- **Current version:** v2.0.5 — verified live against **HA 2026.9.4** (2026-09-30)
 - **Test suite:** the CI badge above is always current — ruff, format, mypy and pytest are hard gates, run with the `[test]` extra against the pinned Home Assistant version
 
 ---
@@ -225,6 +225,12 @@ These are choices, not bugs — each is covered by tests:
   `RestoreEntity`, but a sensor shows `unknown` until the first poll or MQTT
   message, because a restored reading could be arbitrarily old. Only `Update
   Frequency` restores its own value.
+- **During a SmartSolar outage the entities go `unavailable`, and the log stays
+  quiet.** A sensor is available when the poll **or** live MQTT can feed it, so
+  when the provider is unreachable both paths are down and there is nothing to
+  publish. The integration reports that once (one `WARNING` + one `INFO` when it
+  recovers); it does not repeat the failure every poll. See the v2.0.5 changelog
+  note under [Releases](https://github.com/ngoviet/smartsolar_ha/releases).
 - **Diagnostics include the account username** (and redact password and token),
   so that a diagnostics dump can be traced to an account.
 

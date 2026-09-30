@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from copy import deepcopy
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock
@@ -12,6 +13,83 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 from custom_components.smartsolar_ha.api import SmartSolarAPIError
 from custom_components.smartsolar_ha.coordinator import SmartSolarDataUpdateCoordinator
 from tests.conftest import SAMPLE_DEVICE_RESPONSE, SAMPLE_PROJECT_RESPONSE
+
+
+class TestOutageLogging:
+    """A cloud outage must not write a log line per poll.
+
+    The measured cost of the old behaviour: 90 ERROR lines per 10 minutes
+    (one per poll) plus 59 retry warnings, for as long as the provider is down.
+    """
+
+    @pytest.mark.asyncio
+    async def test_only_the_first_failure_is_logged_at_warning(
+        self, mock_hass, mock_api, mock_config_entry_device, caplog
+    ):
+        mock_api.get_metrics = AsyncMock(side_effect=SmartSolarAPIError("Cannot connect to host"))
+        coordinator = SmartSolarDataUpdateCoordinator(
+            hass=mock_hass,
+            api=mock_api,
+            entry=mock_config_entry_device,
+        )
+
+        with caplog.at_level(logging.DEBUG, logger="smartsolar_ha.coordinator"):
+            for _ in range(5):
+                with pytest.raises(UpdateFailed, match="SmartSolar API error"):
+                    await coordinator._async_update_data()
+
+        warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        assert "SmartSolar cloud request failed" in warnings[0].getMessage()
+        assert coordinator._consecutive_api_failures == 5
+        # The later polls are still traceable, just not shouted about.
+        debug_lines = [record for record in caplog.records if "still failing (poll 5)" in record.getMessage()]
+        assert len(debug_lines) == 1
+
+    @pytest.mark.asyncio
+    async def test_recovery_is_reported_once_with_the_poll_count(
+        self, mock_hass, mock_api, mock_config_entry_device, caplog
+    ):
+        mock_api.get_metrics = AsyncMock(
+            side_effect=[
+                SmartSolarAPIError("Cannot connect to host"),
+                SmartSolarAPIError("Cannot connect to host"),
+                deepcopy(SAMPLE_DEVICE_RESPONSE),
+            ]
+        )
+        coordinator = SmartSolarDataUpdateCoordinator(
+            hass=mock_hass,
+            api=mock_api,
+            entry=mock_config_entry_device,
+        )
+
+        with caplog.at_level(logging.INFO, logger="smartsolar_ha.coordinator"):
+            for _ in range(2):
+                with pytest.raises(UpdateFailed):
+                    await coordinator._async_update_data()
+            await coordinator._async_update_data()
+
+        messages = [record.getMessage() for record in caplog.records if record.levelno == logging.INFO]
+        assert [message for message in messages if "reachable again after 2 failed poll(s)" in message]
+        assert coordinator._consecutive_api_failures == 0
+        assert coordinator._outage_started is None
+
+    @pytest.mark.asyncio
+    async def test_a_successful_poll_after_a_successful_poll_stays_quiet(
+        self, mock_hass, mock_api, mock_config_entry_device, caplog
+    ):
+        """No outage means no recovery line: the INFO is only for a recovery."""
+        coordinator = SmartSolarDataUpdateCoordinator(
+            hass=mock_hass,
+            api=mock_api,
+            entry=mock_config_entry_device,
+        )
+
+        with caplog.at_level(logging.INFO, logger="smartsolar_ha.coordinator"):
+            await coordinator._async_update_data()
+            await coordinator._async_update_data()
+
+        assert not [record for record in caplog.records if "reachable again" in record.getMessage()]
 
 
 class TestCoordinatorInitialization:

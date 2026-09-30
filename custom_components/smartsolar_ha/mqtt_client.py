@@ -69,6 +69,7 @@ class SmartSolarMQTTClient:
         "_username",
         "_password",
         "_websocket_path",
+        "_failed_attempts",
     )
 
     def __init__(
@@ -97,6 +98,10 @@ class SmartSolarMQTTClient:
         self._username = username
         self._password = password  # base64-encoded from API
         self._websocket_path = websocket_path
+        # Consecutive failed connect attempts. Only the first one is logged at
+        # WARNING; a broker that is down for hours used to write a warning every
+        # MQTT_RECONNECT_DELAY seconds (hundreds of lines per hour).
+        self._failed_attempts = 0
 
     @property
     def connected(self) -> bool:
@@ -160,6 +165,23 @@ class SmartSolarMQTTClient:
         """Check if the MQTT message loop is active."""
         return self._running and self._task is not None and not self._task.done()
 
+    def _log_connection_established(self) -> None:
+        """Report a (re)connection, including how many attempts it took."""
+        if self._failed_attempts:
+            _LOGGER.info(
+                "MQTT reconnected to %s:%d after %d failed attempt(s)",
+                MQTT_BROKER,
+                MQTT_PORT,
+                self._failed_attempts,
+            )
+            self._failed_attempts = 0
+        else:
+            _LOGGER.info(
+                "Connected to SmartSolar MQTT broker at %s:%d",
+                MQTT_BROKER,
+                MQTT_PORT,
+            )
+
     async def _message_loop(self) -> None:
         """Main MQTT message loop with automatic reconnection."""
         try:
@@ -172,11 +194,20 @@ class SmartSolarMQTTClient:
                     self._connected = False
                     if not self._running:
                         break
-                    _LOGGER.warning(
-                        "MQTT connection failed (%s), reconnecting in %ds...",
-                        exc,
-                        MQTT_RECONNECT_DELAY,
-                    )
+                    self._failed_attempts += 1
+                    if self._failed_attempts == 1:
+                        _LOGGER.warning(
+                            "MQTT connection failed (%s); retrying every %ds in the background",
+                            exc,
+                            MQTT_RECONNECT_DELAY,
+                        )
+                    else:
+                        _LOGGER.debug(
+                            "MQTT reconnect attempt %d failed (%s); retrying in %ds",
+                            self._failed_attempts,
+                            exc,
+                            MQTT_RECONNECT_DELAY,
+                        )
                 else:
                     # The message stream ended without raising — the broker
                     # closed the subscription cleanly. Sleeping here too is what
@@ -185,11 +216,20 @@ class SmartSolarMQTTClient:
                     self._connected = False
                     if not self._running:
                         break
-                    _LOGGER.warning(
-                        "MQTT connection to %s closed, reconnecting in %ds...",
-                        MQTT_BROKER,
-                        MQTT_RECONNECT_DELAY,
-                    )
+                    self._failed_attempts += 1
+                    if self._failed_attempts == 1:
+                        _LOGGER.warning(
+                            "MQTT connection to %s closed; retrying every %ds in the background",
+                            MQTT_BROKER,
+                            MQTT_RECONNECT_DELAY,
+                        )
+                    else:
+                        _LOGGER.debug(
+                            "MQTT stream from %s closed again (%d); retrying in %ds",
+                            MQTT_BROKER,
+                            self._failed_attempts,
+                            MQTT_RECONNECT_DELAY,
+                        )
                 await asyncio.sleep(MQTT_RECONNECT_DELAY)
         finally:
             # Reached on cancel, on a clean end of the stream and on an
@@ -229,11 +269,7 @@ class SmartSolarMQTTClient:
         ) as client:
             self._client = client
             self._connected = True
-            _LOGGER.info(
-                "Connected to SmartSolar MQTT broker at %s:%d",
-                MQTT_BROKER,
-                MQTT_PORT,
-            )
+            self._log_connection_established()
 
             # Subscribe to all device topics
             for guid in self._device_guids:

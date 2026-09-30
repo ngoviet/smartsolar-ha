@@ -3,7 +3,7 @@
 > **System info**: [../System_info/CLAUDE.md](../System_info/CLAUDE.md) — HA at 192.168.10.15, network, credentials
 > **Code search**: `semble search "query" .` — intent-based, ~98% fewer tokens than grep
 
-Home Assistant custom integration for SmartSolar MPPT solar charge controllers. Fetches real-time metrics via HTTP API from `api.smartsolar.io.vn` and MQTT WebSocket Secure from `mqttx.smartsolar.io.vn:8084`. **Current version: v2.0.4**. Verified live against HA **2026.9.4** on 2026-09-28 (v2.0.4 tree; the test extra pins that same version).
+Home Assistant custom integration for SmartSolar MPPT solar charge controllers. Fetches real-time metrics via HTTP API from `api.smartsolar.io.vn` and MQTT WebSocket Secure from `mqttx.smartsolar.io.vn:8084`. **Current version: v2.0.5**. Verified live against HA **2026.9.4** on 2026-09-30 (v2.0.5 tree; the test extra pins that same version).
 
 > ⚠️ **v2.0.0 renamed the domain from `smartsolar_mppt` to `smartsolar_ha`.**
 > Home Assistant identifies an integration by its folder name, which must equal
@@ -19,7 +19,7 @@ Home Assistant custom integration for SmartSolar MPPT solar charge controllers. 
 ```
 custom_components/smartsolar_ha/
 ├── __init__.py          # Integration entry point, setup/unload, service registration, async_migrate_entry
-├── manifest.json        # v2.0.4, domain=smartsolar_ha, config_flow=true
+├── manifest.json        # v2.0.5, domain=smartsolar_ha, config_flow=true
 ├── const.py             # Constants, SENSOR_TYPES, AGGREGATION, MQTT config, build_device_info helper
 ├── helpers.py           # Pure helpers: coerce_float, device_logs, as_list, stream_dict, guid_sort_key
 ├── config_flow.py       # Multi-step config flow: auth → mode → device/project, reauth, reconfigure
@@ -174,6 +174,41 @@ both chargers sit on the same 24 V bus, so summing reports ~53 V:
 Sensors in `const.UNRELIABLE_SYNTHESIS_SENSORS` (charge_power, currents,
 signal_quality) always aggregate locally because the server's
 `synthesisStreams` value is frequently stale or absent.
+
+## v2.0.5 — Quiet During a Provider Outage (2026-09-30)
+
+No behaviour change to the entities: a SmartSolar outage still makes them
+`unavailable` (correct — nothing can feed them), and they still come back by
+themselves. What changed is how loudly that outage is reported, measured on the
+live instance while the provider was actually down on 2026-09-30:
+
+| Source | Before | After |
+|--------|--------|-------|
+| `api.py` retry attempts (`Request attempt 1/3 failed…`) | 59 WARNING / 10 min | DEBUG |
+| `coordinator.py` poll failure (`SmartSolar API error: …`) | 90 ERROR / 10 min | one WARNING when the outage starts, one INFO when it recovers, DEBUG in between |
+| `mqtt_client.py` reconnect (`MQTT connection failed…`) | 54 WARNING / 10 min | one WARNING, then DEBUG until it reconnects |
+
+That was 263 lines per 10 minutes (~38,000/day) of identical text describing a
+provider-side outage an operator can do nothing about.
+
+- `SmartSolarDataUpdateCoordinator` counts consecutive failed polls and keeps
+  `_outage_started`; the first failure logs `WARNING` naming the interval it
+  keeps retrying at, later ones `DEBUG` with the poll number, and the first
+  successful poll logs `INFO` with the failure count and the outage duration
+  (`_format_outage()` renders seconds / minutes / hours).
+- `SmartSolarMQTTClient` counts consecutive failed attempts and clean stream
+  ends in `_failed_attempts` (a `__slots__` member, so it must stay listed
+  there); `_log_connection_established()` reports a reconnection with the
+  attempt count and resets it. A failure that happens while the client is
+  already stopping is deliberately not counted.
+- `api._request_with_retry()` logs its per-attempt retries at `DEBUG`: the
+  coordinator owns the user-visible outage report, so the retry detail stays
+  available to anyone debugging at DEBUG level.
+
+Seven tests pin this (one in `test_api.py`, three in `test_coordinator.py`,
+three in `test_mqtt.py`), including that a successful poll after a successful
+poll logs no recovery line, and that a first connection is never called a
+reconnect.
 
 ## v2.0.4 — Repository Hygiene + Deploy Fix (2026-09-28)
 

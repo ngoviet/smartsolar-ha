@@ -1,6 +1,6 @@
 # SmartSolar MPPT MQ — Toàn Bộ Kiến Thức API & Tích Hợp
 
-> **Trạng thái**: ✅ LIVE · **Phiên bản**: **v2.0.4** (2026-09-28) · **Nguồn sự thật**: [../STATUS.md](../STATUS.md) · **Cập nhật**: 2026-09-28
+> **Trạng thái**: ✅ LIVE · **Phiên bản**: **v2.0.5** (2026-09-30) · **Nguồn sự thật**: [../STATUS.md](../STATUS.md) · **Cập nhật**: 2026-09-30
 >
 > ⚠️ **v2.0.0 đổi domain `smartsolar_mppt` → `smartsolar_ha`** (thư mục, `manifest.domain`,
 > import, tên service, đường dẫn deploy). HA xác định integration theo **tên thư mục** phải
@@ -18,6 +18,15 @@
 >
 > ⚠️ Nội dung tổng hợp **2026-06-22**, đã bổ sung mục [7.4 — audit v1.5.1](#74-đã-fix-trong-v151-2026-09-27--audit-toàn-diện).
 > Đối chiếu lại entity thực tế nếu có sai lệch.
+>
+> 📌 **v2.0.5 (2026-09-30)** — **giảm ồn log khi nhà cung cấp sập, không đổi hành vi
+> entity.** Đo thật trên HA lúc SmartSolar chết (portal + REST API + MQTT broker đều
+> refused): 263 dòng log / 10 phút (~38.000 dòng/ngày) toàn nội dung lặp lại. Nay:
+> retry trong `api.py` xuống DEBUG; `coordinator.py` chỉ WARNING **lần fail đầu**, các
+> lần sau DEBUG, và INFO kèm số lần fail + thời gian outage khi hồi phục; `mqtt_client.py`
+> cũng chỉ WARNING lần đầu rồi DEBUG, INFO khi kết nối lại (kèm số lần thử). Entity vẫn
+> `unavailable` khi cả hai đường dữ liệu chết — đúng thiết kế — và tự có số trở lại, không
+> cần restart HA.
 >
 > 📌 **v2.0.4 (2026-09-28)** — **không đổi code integration**, chỉ gộp 3 commit sau tag
 > v2.0.3 để tag khớp `main`: sửa `prune_remote()` chạy được trên BusyBox `find` của HAOS

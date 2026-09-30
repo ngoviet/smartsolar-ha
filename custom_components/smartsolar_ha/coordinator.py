@@ -25,6 +25,19 @@ from .helpers import coerce_float, device_logs, guid_sort_key, stream_dict
 
 _LOGGER = logging.getLogger(COORDINATOR_LOGGER)
 
+
+def _format_outage(duration: timedelta) -> str:
+    """Render an outage length for the recovery log line (e.g. '2 h 05 min')."""
+    total = int(duration.total_seconds())
+    if total < 60:
+        return f"{total} s"
+    minutes, seconds = divmod(total, 60)
+    if minutes < 60:
+        return f"{minutes} min {seconds:02d} s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} h {minutes:02d} min"
+
+
 # ── Daily stats tracking ──────────────────────────────────────────────
 # The SmartSolar server does NOT store long-term historical data (API only
 # returns current month; Prometheus only keeps ~2 months).  HA fills the gap:
@@ -53,6 +66,8 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         "_daily_stats",
         "_daily_tracker_unsub",
         "_mqtt_notify_unsub",
+        "_consecutive_api_failures",
+        "_outage_started",
     )
 
     def __init__(
@@ -89,6 +104,14 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # See async_process_mqtt_data() for why this must NOT be
         # async_set_updated_data().
         self._mqtt_notify_unsub: Callable[[], None] | None = None
+
+        # Cloud-outage bookkeeping. A failing poll reports itself through
+        # UpdateFailed, which Home Assistant already logs once per transition,
+        # so consecutive failures are counted here and only the first one is
+        # logged at WARNING: a multi-hour outage used to write an ERROR line
+        # every poll (~1,600 lines/hour) of identical text.
+        self._consecutive_api_failures = 0
+        self._outage_started: datetime | None = None
 
         # Register midnight-reset listener
         self._daily_tracker_unsub = async_track_time_change(hass, self._reset_daily_stats, hour=0, minute=0, second=0)
@@ -462,11 +485,34 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     if charge_power is not None:
                         self._update_daily_stats(guid, charge_power, now)
 
+            if self._consecutive_api_failures:
+                outage = dt_util.now() - self._outage_started if self._outage_started else None
+                _LOGGER.info(
+                    "SmartSolar cloud reachable again after %d failed poll(s)%s",
+                    self._consecutive_api_failures,
+                    f" ({_format_outage(outage)})" if outage is not None else "",
+                )
+                self._consecutive_api_failures = 0
+                self._outage_started = None
+
             _LOGGER.debug("SmartSolar API Update Complete")
             return data
 
         except SmartSolarAPIError as err:
-            _LOGGER.error("SmartSolar API error: %s", err)
+            self._consecutive_api_failures += 1
+            if self._consecutive_api_failures == 1:
+                self._outage_started = dt_util.now()
+                _LOGGER.warning(
+                    "SmartSolar cloud request failed (%s); retrying every %s in the background",
+                    err,
+                    self.update_interval,
+                )
+            else:
+                _LOGGER.debug(
+                    "SmartSolar cloud still failing (poll %d): %s",
+                    self._consecutive_api_failures,
+                    err,
+                )
             raise UpdateFailed(f"SmartSolar API error: {err}") from err
         except (ValueError, TypeError, KeyError) as err:
             _LOGGER.error("Data processing error: %s", err, exc_info=True)

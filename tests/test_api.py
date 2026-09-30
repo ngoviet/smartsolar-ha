@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -311,6 +312,30 @@ class TestRequestRetry:
 
         assert response.status == 200
         assert session.requests == 2
+
+    @pytest.mark.asyncio
+    async def test_retry_attempts_are_logged_at_debug_only(self, caplog):
+        """Retry detail is diagnostic, not something a user must read.
+
+        A cloud outage lasting hours used to write one WARNING per retry - two
+        per poll - for as long as it lasted tens of thousands of identical
+        lines. The coordinator owns the user-visible outage report.
+        """
+        session = _FakeSession([(500, {}), (500, {}), (500, {})])
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=session)
+
+        with (
+            patch("custom_components.smartsolar_ha.api.asyncio.sleep", new=AsyncMock()),
+            caplog.at_level(logging.DEBUG, logger="custom_components.smartsolar_ha.api"),
+            pytest.raises(SmartSolarAPIError),
+        ):
+            await api._request_with_retry("GET", "https://example.invalid/x")
+
+        retries = [record for record in caplog.records if "Request attempt" in record.getMessage()]
+        assert len(retries) == RETRY_MAX_ATTEMPTS - 1
+        assert all(record.levelno == logging.DEBUG for record in retries)
+        assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
 
     @pytest.mark.asyncio
     async def test_does_not_retry_404(self):
