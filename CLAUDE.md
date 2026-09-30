@@ -185,6 +185,7 @@ live instance while the provider was actually down on 2026-09-30:
 | Source | Before | After |
 |--------|--------|-------|
 | `api.py` retry attempts (`Request attempt 1/3 failed…`) | 59 WARNING / 10 min | DEBUG |
+| `api.py` login failure (`Login request failed…`, `Login failed with status 5xx…`) | one ERROR per poll while no valid cached token exists | DEBUG — invalid credentials deliberately stay at ERROR |
 | `coordinator.py` poll failure (`SmartSolar API error: …`) | 90 ERROR / 10 min | one WARNING when the outage starts, one INFO when it recovers, DEBUG in between |
 | `mqtt_client.py` reconnect (`MQTT connection failed…`) | 54 WARNING / 10 min | one WARNING, then DEBUG until it reconnects |
 
@@ -204,11 +205,17 @@ provider-side outage an operator can do nothing about.
 - `api._request_with_retry()` logs its per-attempt retries at `DEBUG`: the
   coordinator owns the user-visible outage report, so the retry detail stays
   available to anyone debugging at DEBUG level.
+- `api.login()` is reached once per poll whenever no valid cached token exists
+  (after an HA restart or reload during an outage, or once a token enters the
+  7-day refresh window), so its connection and 5xx failures are `DEBUG` too.
+  A rejected login (401 / non-retryable 4xx) deliberately stays at `ERROR`:
+  nothing else in the poll path surfaces bad credentials.
 
-Seven tests pin this (one in `test_api.py`, three in `test_coordinator.py`,
+Eleven tests pin this (five in `test_api.py`, three in `test_coordinator.py`,
 three in `test_mqtt.py`), including that a successful poll after a successful
-poll logs no recovery line, and that a first connection is never called a
-reconnect.
+poll logs no recovery line, that a first connection is never called a
+reconnect, and that a refused or 5xx login writes no WARNING/ERROR while a 401
+writes exactly one ERROR.
 
 ## v2.0.4 — Repository Hygiene + Deploy Fix (2026-09-28)
 
