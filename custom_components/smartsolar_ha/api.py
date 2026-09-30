@@ -233,7 +233,11 @@ class SmartSolarAPI:
 
             if attempt < RETRY_MAX_ATTEMPTS - 1:
                 delay = RETRY_BACKOFF_FACTOR**attempt
-                _LOGGER.warning(
+                # DEBUG, not WARNING: the coordinator reports the outage once
+                # (see _async_update_data). At WARNING this wrote two lines per
+                # poll for as long as the cloud stayed down — a full day of an
+                # outage produced tens of thousands of identical warnings.
+                _LOGGER.debug(
                     "Request attempt %d/%d failed: %s. Retrying in %ds...",
                     attempt + 1,
                     RETRY_MAX_ATTEMPTS,

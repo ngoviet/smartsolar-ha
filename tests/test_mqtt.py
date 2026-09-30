@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from copy import deepcopy
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -606,3 +607,75 @@ class TestMessageLoopReconnect:
 
         assert client.connected is False
         assert client._client is None
+
+
+class TestReconnectLogging:
+    """A broker that stays down must not log a warning per reconnect attempt.
+
+    Measured during a real outage: 54 identical `MQTT connection failed …
+    reconnecting in 5s` warnings in 10 minutes (~7,800 a day).
+    """
+
+    def _make_client(self):
+        return SmartSolarMQTTClient(
+            device_guids=["547611"],
+            on_data_callback=AsyncMock(),
+            username="web_app",
+            password="cGFzcw==",
+        )
+
+    @pytest.mark.asyncio
+    async def test_only_the_first_reconnect_failure_warns(self, caplog):
+        client = self._make_client()
+        client._running = True
+        attempts = 0
+
+        async def failing_connect(inner_self) -> None:
+            nonlocal attempts
+            attempts += 1
+            raise OSError("connection refused")
+
+        async def fake_sleep(_delay):
+            # Stop from the backoff, not from inside a failing attempt: a
+            # failure that happens while the client is already stopping is
+            # deliberately not counted as an outage attempt.
+            if attempts >= 4:
+                client._running = False
+
+        with (
+            patch.object(SmartSolarMQTTClient, "_connect_and_listen", failing_connect),
+            patch("custom_components.smartsolar_ha.mqtt_client.asyncio.sleep", fake_sleep),
+            caplog.at_level(logging.DEBUG, logger="custom_components.smartsolar_ha.mqtt_client"),
+        ):
+            await client._message_loop()
+
+        warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        assert "MQTT connection failed" in warnings[0].getMessage()
+        assert client._failed_attempts == 4
+        debug_lines = [record for record in caplog.records if "MQTT reconnect attempt" in record.getMessage()]
+        assert len(debug_lines) == 3
+        assert all(record.levelno == logging.DEBUG for record in debug_lines)
+
+    def test_a_recovery_reports_how_many_attempts_it_took(self, caplog):
+        client = self._make_client()
+        client._failed_attempts = 3
+
+        with caplog.at_level(logging.INFO, logger="custom_components.smartsolar_ha.mqtt_client"):
+            client._log_connection_established()
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert [
+            message for message in messages if "reconnected to" in message and "after 3 failed attempt(s)" in message
+        ]
+        assert client._failed_attempts == 0
+
+    def test_a_first_connection_is_not_called_a_reconnect(self, caplog):
+        client = self._make_client()
+
+        with caplog.at_level(logging.INFO, logger="custom_components.smartsolar_ha.mqtt_client"):
+            client._log_connection_established()
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert [message for message in messages if "Connected to SmartSolar MQTT broker" in message]
+        assert not [message for message in messages if "reconnected" in message]
