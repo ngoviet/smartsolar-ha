@@ -22,7 +22,9 @@
 > 📌 **v2.0.5 (2026-09-30)** — **giảm ồn log khi nhà cung cấp sập, không đổi hành vi
 > entity.** Đo thật trên HA lúc SmartSolar chết (portal + REST API + MQTT broker đều
 > refused): 263 dòng log / 10 phút (~38.000 dòng/ngày) toàn nội dung lặp lại. Nay:
-> retry trong `api.py` xuống DEBUG; `coordinator.py` chỉ WARNING **lần fail đầu**, các
+> retry trong `api.py` xuống DEBUG, và cả lỗi login (connection/5xx) cũng xuống DEBUG —
+> riêng 401 / sai mật khẩu vẫn ERROR để còn chẩn đoán được; `coordinator.py` chỉ
+> WARNING **lần fail đầu**, các
 > lần sau DEBUG, và INFO kèm số lần fail + thời gian outage khi hồi phục; `mqtt_client.py`
 > cũng chỉ WARNING lần đầu rồi DEBUG, INFO khi kết nối lại (kèm số lần thử). Entity vẫn
 > `unavailable` khi cả hai đường dữ liệu chết — đúng thiết kế — và tự có số trở lại, không

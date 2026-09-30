@@ -227,6 +227,70 @@ class TestSmartSolarAPI:
             await api.login()
 
 
+class TestLoginLogLevels:
+    """login() runs once per poll when no cached token exists, so it must not
+    write a user-visible line per poll during a provider outage."""
+
+    _LOGGER = "custom_components.smartsolar_ha.api"
+
+    @pytest.mark.asyncio
+    async def test_connection_failure_is_debug_only(self, caplog):
+        """A refused login connection is reported by the coordinator, not here."""
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=_FakeSession([aiohttp.ClientConnectionError("refused")]))
+
+        with (
+            caplog.at_level(logging.DEBUG, logger=self._LOGGER),
+            pytest.raises(SmartSolarConnectionError),
+        ):
+            await api.login()
+
+        assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
+
+    @pytest.mark.asyncio
+    async def test_server_error_is_debug_only(self, caplog):
+        """A 5xx login is a provider-side outage, not a per-poll ERROR."""
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=_FakeSession([(500, {"error": "down"})]))
+
+        with (
+            caplog.at_level(logging.DEBUG, logger=self._LOGGER),
+            pytest.raises(SmartSolarAPIError) as err,
+        ):
+            await api.login()
+
+        assert err.value.status_code == 500
+        assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
+
+    @pytest.mark.asyncio
+    async def test_auth_rejection_stays_at_error(self, caplog):
+        """Bad credentials must remain diagnosable, so a 401 is logged at ERROR."""
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=_FakeSession([(401, {"error": "bad password"})]))
+
+        with (
+            caplog.at_level(logging.ERROR, logger=self._LOGGER),
+            pytest.raises(SmartSolarAuthenticationError),
+        ):
+            await api.login()
+
+        errors = [record for record in caplog.records if record.levelno == logging.ERROR]
+        assert len(errors) == 1
+
+    @pytest.mark.asyncio
+    async def test_token_refresh_within_window_writes_no_info(self, caplog):
+        """The refresh message fires every poll for the last 7 days, so it is debug."""
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._token = "valid-token"
+        api._token_expiry = datetime.now(UTC) + timedelta(days=3)
+        api.login = AsyncMock()
+
+        with caplog.at_level(logging.INFO, logger=self._LOGGER):
+            await api.refresh_token_if_needed()
+
+        assert not [record for record in caplog.records if record.levelno >= logging.INFO]
+
+
 class TestParseExpiration:
     """Tests for the token-expiry parser.
 

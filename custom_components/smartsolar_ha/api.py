@@ -190,12 +190,17 @@ class SmartSolarAPI:
                     return payload
 
                 error_text = await response.text()
-                _LOGGER.error("Login failed with status %s: %s", response.status, error_text)
+                if response.status >= 500 or response.status in RETRYABLE_STATUSES:
+                    # DEBUG: the coordinator owns the user-visible outage report.
+                    _LOGGER.debug("Login failed with status %s: %s", response.status, error_text)
+                else:
+                    _LOGGER.error("Login failed with status %s: %s", response.status, error_text)
                 if response.status == 401:
                     raise SmartSolarAuthenticationError(f"Invalid credentials: {error_text}", response.status)
                 raise SmartSolarAPIError(f"Login failed: {error_text}", response.status)
-        except aiohttp.ClientError as err:
-            _LOGGER.error("Login request failed: %s", err)
+        except (TimeoutError, aiohttp.ClientError) as err:
+            # DEBUG: the coordinator owns the user-visible outage report.
+            _LOGGER.debug("Login request failed: %s", err)
             raise SmartSolarConnectionError(f"Login request failed: {err}") from err
 
     async def _request_with_retry(
@@ -318,7 +323,7 @@ class SmartSolarAPI:
         refresh_threshold = dt_util.utcnow() + timedelta(days=TOKEN_REFRESH_DAYS_BEFORE_EXPIRY)
 
         if self._token_expiry <= refresh_threshold:
-            _LOGGER.info("Token expires soon, refreshing...")
+            _LOGGER.debug("Token expires soon, refreshing...")
             await self.login()
         else:
             _LOGGER.debug("Token is still valid")
