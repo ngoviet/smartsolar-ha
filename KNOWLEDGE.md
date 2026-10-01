@@ -492,9 +492,10 @@ Step 4b: async_step_project_devices
 ```python
 # Error hierarchy:
 SmartSolarAPIError(Exception)
-├── SmartSolarAuthenticationError  # 401 — sai credentials
-├── SmartSolarConnectionError      # aiohttp.ClientError — mất mạng
-└── SmartSolarNotFoundError        # 404 — sai project/device ID
+├── SmartSolarAuthenticationError              # 401 — token cache bị từ chối (poll sau tự login lại)
+│   └── SmartSolarInvalidCredentialsError      # 401 lúc login — sai username/password → HA mở reauth
+├── SmartSolarConnectionError                  # aiohttp.ClientError — mất mạng
+└── SmartSolarNotFoundError                    # 404 — sai project/device ID
 
 # Token refresh:
 # - Kiểm tra expiry mỗi lần gọi API
