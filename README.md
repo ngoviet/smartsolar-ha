@@ -231,8 +231,8 @@ These are choices, not bugs — each is covered by tests:
   publish. The integration reports that once (one `WARNING` + one `INFO` when it
   recovers); it does not repeat the failure every poll. A **rejected password**
   is treated differently on purpose: it asks Home Assistant to start its
-  re-authentication flow instead of retrying as if it were an outage. See the v2.0.5 changelog
-  note under [Releases](https://github.com/ngoviet/smartsolar_ha/releases).
+  re-authentication flow instead of retrying as if it were an outage. See the
+  release notes under [Releases](https://github.com/ngoviet/smartsolar_ha/releases).
 - **Diagnostics include the account username** (and redact password and token),
   so that a diagnostics dump can be traced to an account.
 
