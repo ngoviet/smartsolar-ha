@@ -1,7 +1,7 @@
 {
   "domain": "smartsolar_ha",
   "name": "SmartSolar MPPT",
-  "version": "2.0.5",
+  "version": "2.0.6",
   "documentation": "https://github.com/ngoviet/smartsolar_ha",
   "issue_tracker": "https://github.com/ngoviet/smartsolar_ha/issues",
   "codeowners": ["@ngoviet"],

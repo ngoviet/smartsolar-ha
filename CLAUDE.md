@@ -3,7 +3,7 @@
 > **System info**: [../System_info/CLAUDE.md](../System_info/CLAUDE.md) — HA at 192.168.10.15, network, credentials
 > **Code search**: `semble search "query" .` — intent-based, ~98% fewer tokens than grep
 
-Home Assistant custom integration for SmartSolar MPPT solar charge controllers. Fetches real-time metrics via HTTP API from `api.smartsolar.io.vn` and MQTT WebSocket Secure from `mqttx.smartsolar.io.vn:8084`. **Current version: v2.0.5**. Verified live against HA **2026.9.4** on 2026-09-30 (v2.0.5 tree; the test extra pins that same version).
+Home Assistant custom integration for SmartSolar MPPT solar charge controllers. Fetches real-time metrics via HTTP API from `api.smartsolar.io.vn` and MQTT WebSocket Secure from `mqttx.smartsolar.io.vn:8084`. **Current version: v2.0.6**. Verified live against HA **2026.9.4** on 2026-09-30 (v2.0.6 tree; the test extra pins that same version).
 
 > ⚠️ **v2.0.0 renamed the domain from `smartsolar_mppt` to `smartsolar_ha`.**
 > Home Assistant identifies an integration by its folder name, which must equal
@@ -19,7 +19,7 @@ Home Assistant custom integration for SmartSolar MPPT solar charge controllers. 
 ```
 custom_components/smartsolar_ha/
 ├── __init__.py          # Integration entry point, setup/unload, service registration, async_migrate_entry
-├── manifest.json        # v2.0.5, domain=smartsolar_ha, config_flow=true
+├── manifest.json        # v2.0.6, domain=smartsolar_ha, config_flow=true
 ├── const.py             # Constants, SENSOR_TYPES, AGGREGATION, MQTT config, build_device_info helper
 ├── helpers.py           # Pure helpers: coerce_float, device_logs, as_list, stream_dict, guid_sort_key
 ├── config_flow.py       # Multi-step config flow: auth → mode → device/project, reauth, reconfigure
@@ -174,6 +174,41 @@ both chargers sit on the same 24 V bus, so summing reports ~53 V:
 Sensors in `const.UNRELIABLE_SYNTHESIS_SENSORS` (charge_power, currents,
 signal_quality) always aggregate locally because the server's
 `synthesisStreams` value is frequently stale or absent.
+
+## v2.0.6 — A Wrong Password Asks the User (2026-09-30)
+
+The one gap v2.0.5 left: `SmartSolarAuthenticationError` was caught nowhere, so
+rejected credentials were reported as a generic update failure — one ERROR per
+poll from `login()`, and Home Assistant never asked the user for a new password.
+This release follows the documented Home Assistant pattern instead.
+
+- **Two kinds of 401 are now told apart.** `api.login()` raises the new
+  `SmartSolarInvalidCredentialsError` (a subclass, so the config flow's
+  `invalid_auth` handling and `test_connection()` are unchanged);
+  `_authed_get()` keeps raising the plain `SmartSolarAuthenticationError` when
+  the server rejects a *cached token*. The distinction matters: a stale token is
+  fixed by the next poll logging in again, while asking the user to re-enter
+  credentials that are perfectly good would be wrong.
+- **The coordinator maps only the first one to `ConfigEntryAuthFailed`.** Home
+  Assistant's `DataUpdateCoordinator` catches it, logs
+  `Authentication failed while fetching …` **once**, marks the coordinator failed
+  and calls `config_entry.async_start_reauth_if_available()` — which is what
+  shows the re-authentication dialog (`config_flow.async_step_reauth`, translated
+  since v2.0.1). Nothing is logged by our code: HA already logged it, and a
+  second line per poll is exactly the noise v2.0.5 removed.
+- The outage counters are deliberately left untouched by an auth failure, so a
+  later recovery still reports the real poll failures rather than the password
+  mistake. `async_setup_entry` needed no change: it calls `async_refresh()`,
+  which routes the exception through that same HA handler.
+
+Five tests pin it: login's 401 raises the credentials error (and is still an
+authentication error for the config flow); a rejected cached token is *not* the
+credentials error and still clears the token; the coordinator turns the
+credentials error into `ConfigEntryAuthFailed` with no WARNING and no touched
+counters; a rejected token stays a plain `UpdateFailed` so a stale token cannot
+trigger a reauth dialog; and driving the real `coordinator.async_refresh()`
+asserts the entry's `async_start_reauth_if_available` is called and the
+coordinator is marked failed.
 
 ## v2.0.5 — Quiet During a Provider Outage (2026-09-30)
 

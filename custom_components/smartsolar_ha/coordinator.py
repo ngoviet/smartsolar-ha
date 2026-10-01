@@ -9,11 +9,12 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.event import async_call_later, async_track_time_change
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .api import SmartSolarAPI, SmartSolarAPIError
+from .api import SmartSolarAPI, SmartSolarAPIError, SmartSolarInvalidCredentialsError
 from .const import (
     CHARGE_POWER_MAX_W,
     COORDINATOR_LOGGER,
@@ -498,6 +499,19 @@ class SmartSolarDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.debug("SmartSolar API Update Complete")
             return data
 
+        except SmartSolarInvalidCredentialsError as err:
+            # A wrong password is not an outage and no retry can fix it, so this
+            # is the one failure we hand to Home Assistant instead of counting
+            # it: DataUpdateCoordinator logs it once and calls
+            # async_start_reauth_if_available(), which is what asks the user for
+            # new credentials. Nothing is logged here — HA already did, and a
+            # second line per poll would be the noise v2.0.5 removed.
+            #
+            # Note the narrower type: a *rejected token* stays a plain
+            # SmartSolarAuthenticationError below, because the next poll logs in
+            # again and forcing a reauth for it would ask the user to re-enter
+            # credentials that are perfectly good.
+            raise ConfigEntryAuthFailed(f"SmartSolar rejected the stored credentials: {err}") from err
         except SmartSolarAPIError as err:
             self._consecutive_api_failures += 1
             if self._consecutive_api_failures == 1:

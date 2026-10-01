@@ -16,6 +16,7 @@ from custom_components.smartsolar_ha.api import (
     SmartSolarAPIError,
     SmartSolarAuthenticationError,
     SmartSolarConnectionError,
+    SmartSolarInvalidCredentialsError,
     SmartSolarNotFoundError,
     _parse_expiration,
 )
@@ -276,6 +277,43 @@ class TestLoginLogLevels:
 
         errors = [record for record in caplog.records if record.levelno == logging.ERROR]
         assert len(errors) == 1
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_login_is_reported_as_bad_credentials(self):
+        """A 401 from login() means new credentials are needed, not a stale token.
+
+        The coordinator keys Home Assistant's reauth flow off this narrower type,
+        so login() must raise it rather than the plain authentication error.
+        """
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=_FakeSession([(401, {"error": "bad password"})]))
+
+        with pytest.raises(SmartSolarInvalidCredentialsError) as err:
+            await api.login()
+
+        assert err.value.status_code == 401
+        # Still an authentication error, so the config flow's invalid_auth
+        # handling (and test_connection) keep working unchanged.
+        assert isinstance(err.value, SmartSolarAuthenticationError)
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_cached_token_is_not_bad_credentials(self):
+        """A token the server rejects is fixed by logging in again.
+
+        It must stay the plain authentication error, because asking the user to
+        re-enter credentials that are perfectly good would be wrong.
+        """
+        session = _FakeSession([(401, {"error": "token expired"})])
+        api = SmartSolarAPI("user", "pass", MagicMock())
+        api._get_session = AsyncMock(return_value=session)
+        api._token = "stale-token"
+        api._token_expiry = datetime.now(UTC) + timedelta(days=10)
+
+        with pytest.raises(SmartSolarAuthenticationError) as err:
+            await api._authed_get("https://example.invalid/x", {})
+
+        assert not isinstance(err.value, SmartSolarInvalidCredentialsError)
+        assert api.token is None  # dropped so the next call logs in again
 
     @pytest.mark.asyncio
     async def test_token_refresh_within_window_writes_no_info(self, caplog):

@@ -47,6 +47,22 @@ class SmartSolarAuthenticationError(SmartSolarAPIError):
     """Authentication failed."""
 
 
+class SmartSolarInvalidCredentialsError(SmartSolarAuthenticationError):
+    """Login was rejected: the stored username/password are wrong.
+
+    Deliberately distinct from the plain :class:`SmartSolarAuthenticationError`
+    that ``_authed_get()`` raises when the server rejects a *cached token*: that
+    one drops the token so the next poll logs in again, and is fixed by simply
+    trying again. Only this one means a human has to supply new credentials, so
+    only this one is worth asking Home Assistant to start its reauth flow for
+    (see ``SmartSolarDataUpdateCoordinator._async_update_data``).
+    """
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        """Initialize the invalid-credentials error."""
+        super().__init__(message, status_code or 401)
+
+
 class SmartSolarConnectionError(SmartSolarAPIError):
     """Connection error."""
 
@@ -196,7 +212,7 @@ class SmartSolarAPI:
                 else:
                     _LOGGER.error("Login failed with status %s: %s", response.status, error_text)
                 if response.status == 401:
-                    raise SmartSolarAuthenticationError(f"Invalid credentials: {error_text}", response.status)
+                    raise SmartSolarInvalidCredentialsError(f"Invalid credentials: {error_text}", response.status)
                 raise SmartSolarAPIError(f"Login failed: {error_text}", response.status)
         except (TimeoutError, aiohttp.ClientError) as err:
             # DEBUG: the coordinator owns the user-visible outage report.
