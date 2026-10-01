@@ -14,7 +14,7 @@ live metrics from the SmartSolar cloud API and from the SmartSolar MQTT broker,
 exposes them as Home Assistant sensors, and keeps the values flowing from
 whichever source is available.
 
-- **Current version:** v2.0.6 — verified live against **HA 2026.9.4** (2026-09-30)
+- **Current version:** v2.0.6 — the last live verification was of the v2.0.5 tree against **HA 2026.9.4** (2026-09-30), and every release is deployed to the reference installation and checked with `verify_live.py` right after its tag
 - **Test suite:** the CI badge above is always current — ruff, format, mypy and pytest are hard gates, run with the `[test]` extra against the pinned Home Assistant version
 
 ---
