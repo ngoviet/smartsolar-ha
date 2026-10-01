@@ -14,7 +14,7 @@ live metrics from the SmartSolar cloud API and from the SmartSolar MQTT broker,
 exposes them as Home Assistant sensors, and keeps the values flowing from
 whichever source is available.
 
-- **Current version:** v2.0.5 — verified live against **HA 2026.9.4** (2026-09-30)
+- **Current version:** v2.0.6 — verified live against **HA 2026.9.4** (2026-09-30)
 - **Test suite:** the CI badge above is always current — ruff, format, mypy and pytest are hard gates, run with the `[test]` extra against the pinned Home Assistant version
 
 ---
@@ -229,7 +229,9 @@ These are choices, not bugs — each is covered by tests:
   quiet.** A sensor is available when the poll **or** live MQTT can feed it, so
   when the provider is unreachable both paths are down and there is nothing to
   publish. The integration reports that once (one `WARNING` + one `INFO` when it
-  recovers); it does not repeat the failure every poll. See the v2.0.5 changelog
+  recovers); it does not repeat the failure every poll. A **rejected password**
+  is treated differently on purpose: it asks Home Assistant to start its
+  re-authentication flow instead of retrying as if it were an outage. See the v2.0.5 changelog
   note under [Releases](https://github.com/ngoviet/smartsolar_ha/releases).
 - **Diagnostics include the account username** (and redact password and token),
   so that a diagnostics dump can be traced to an account.
@@ -239,6 +241,7 @@ These are choices, not bugs — each is covered by tests:
 | Symptom | What to check |
 |---------|---------------|
 | No sensor data | Credentials are valid and the device is online in the SmartSolar app; check the integration's INFO logs |
+| Home Assistant asks you to re-authenticate | The account password was rejected (changed or revoked). Enter the new password in the prompt — the entities stay `unavailable` until you do, and nothing else needs reconfiguring |
 | Integration does not load | `manifest.json` requires `aiohttp` and `aiomqtt`; check the Home Assistant log for the loader error |
 | Cloud errors (502/503/timeouts) | The SmartSolar cloud is temporarily unavailable — polls retry with backoff, and MQTT-fed sensors keep updating |
 | Token problems | Tokens refresh automatically; the `smartsolar_ha.refresh_token` service forces a refresh for one entry |

@@ -1,6 +1,6 @@
 # SmartSolar MPPT MQ — Toàn Bộ Kiến Thức API & Tích Hợp
 
-> **Trạng thái**: ✅ LIVE · **Phiên bản**: **v2.0.5** (2026-09-30) · **Nguồn sự thật**: [../STATUS.md](../STATUS.md) · **Cập nhật**: 2026-09-30
+> **Trạng thái**: ✅ LIVE · **Phiên bản**: **v2.0.6** (2026-09-30) · **Nguồn sự thật**: [../STATUS.md](../STATUS.md) · **Cập nhật**: 2026-09-30
 >
 > ⚠️ **v2.0.0 đổi domain `smartsolar_mppt` → `smartsolar_ha`** (thư mục, `manifest.domain`,
 > import, tên service, đường dẫn deploy). HA xác định integration theo **tên thư mục** phải
@@ -18,6 +18,14 @@
 >
 > ⚠️ Nội dung tổng hợp **2026-06-22**, đã bổ sung mục [7.4 — audit v1.5.1](#74-đã-fix-trong-v151-2026-09-27--audit-toàn-diện).
 > Đối chiếu lại entity thực tế nếu có sai lệch.
+>
+> 📌 **v2.0.6 (2026-09-30)** — **sai mật khẩu giờ do HA hỏi lại, không còn là "outage".**
+> `api.login()` tách riêng `SmartSolarInvalidCredentialsError` (401 lúc đăng nhập = mật khẩu
+> sai) khỏi `SmartSolarAuthenticationError` (token cache bị từ chối = poll sau tự login lại).
+> Coordinator chỉ map loại đầu thành `ConfigEntryAuthFailed` → HA log **1 lần** và tự mở
+> luồng re-authentication (`async_step_reauth`), entity `unavailable` cho tới khi nhập lại
+> mật khẩu. Token bị từ chối vẫn là `UpdateFailed` bình thường nên **không** hiện hộp thoại
+> reauth vô ích. Bộ đếm outage không bị ảnh hưởng bởi lỗi auth.
 >
 > 📌 **v2.0.5 (2026-09-30)** — **giảm ồn log khi nhà cung cấp sập, không đổi hành vi
 > entity.** Đo thật trên HA lúc SmartSolar chết (portal + REST API + MQTT broker đều

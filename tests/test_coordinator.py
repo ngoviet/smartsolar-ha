@@ -8,9 +8,14 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.smartsolar_ha.api import SmartSolarAPIError
+from custom_components.smartsolar_ha.api import (
+    SmartSolarAPIError,
+    SmartSolarAuthenticationError,
+    SmartSolarInvalidCredentialsError,
+)
 from custom_components.smartsolar_ha.coordinator import SmartSolarDataUpdateCoordinator
 from tests.conftest import SAMPLE_DEVICE_RESPONSE, SAMPLE_PROJECT_RESPONSE
 
@@ -90,6 +95,76 @@ class TestOutageLogging:
             await coordinator._async_update_data()
 
         assert not [record for record in caplog.records if "reachable again" in record.getMessage()]
+
+
+class TestAuthenticationFailures:
+    """Bad credentials must ask the user, not look like an outage."""
+
+    @pytest.mark.asyncio
+    async def test_invalid_credentials_raise_config_entry_auth_failed(
+        self, mock_hass, mock_api, mock_config_entry_device, caplog
+    ):
+        """The narrower error becomes ConfigEntryAuthFailed, and stays quiet.
+
+        Home Assistant logs that exception once and starts the reauth flow, so
+        our own WARNING (plus its failure counter) would be a second, repeated
+        line about a problem no retry can fix.
+        """
+        mock_api.get_metrics = AsyncMock(
+            side_effect=SmartSolarInvalidCredentialsError("Invalid credentials: bad password")
+        )
+        coordinator = SmartSolarDataUpdateCoordinator(
+            hass=mock_hass,
+            api=mock_api,
+            entry=mock_config_entry_device,
+        )
+
+        with (
+            caplog.at_level(logging.DEBUG, logger="smartsolar_ha.coordinator"),
+            pytest.raises(ConfigEntryAuthFailed, match="rejected the stored credentials"),
+        ):
+            for _ in range(3):
+                await coordinator._async_update_data()
+
+        assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
+        assert coordinator._consecutive_api_failures == 0
+        assert coordinator._outage_started is None
+
+    @pytest.mark.asyncio
+    async def test_a_rejected_token_stays_a_plain_update_failure(self, mock_hass, mock_api, mock_config_entry_device):
+        """A stale token is fixed by the next login, so it must not force a reauth."""
+        mock_api.get_metrics = AsyncMock(side_effect=SmartSolarAuthenticationError("Token rejected by API (401)", 401))
+        coordinator = SmartSolarDataUpdateCoordinator(
+            hass=mock_hass,
+            api=mock_api,
+            entry=mock_config_entry_device,
+        )
+
+        with pytest.raises(UpdateFailed, match="SmartSolar API error"):
+            await coordinator._async_update_data()
+
+        mock_config_entry_device.async_start_reauth_if_available.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_async_refresh_asks_the_entry_to_start_reauth(self, mock_hass, mock_api, mock_config_entry_device):
+        """End to end through Home Assistant's own refresh wrapper.
+
+        ``async_refresh()`` is what ``async_setup_entry`` and the poll timer call;
+        DataUpdateCoordinator catches ConfigEntryAuthFailed, marks the coordinator
+        failed and calls ``async_start_reauth_if_available`` on the entry — which
+        is the reauth flow the user actually sees.
+        """
+        mock_api.get_metrics = AsyncMock(side_effect=SmartSolarInvalidCredentialsError("Invalid credentials"))
+        coordinator = SmartSolarDataUpdateCoordinator(
+            hass=mock_hass,
+            api=mock_api,
+            entry=mock_config_entry_device,
+        )
+
+        await coordinator.async_refresh()
+
+        mock_config_entry_device.async_start_reauth_if_available.assert_called_once_with(mock_hass)
+        assert coordinator.last_update_success is False
 
 
 class TestCoordinatorInitialization:
